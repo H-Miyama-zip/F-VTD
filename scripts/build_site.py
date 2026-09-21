@@ -4,7 +4,6 @@ Cloudflare Pages runs this on every push: build command `python scripts/build_si
 output directory `public`.
 """
 import csv
-import datetime
 import hashlib
 import json
 import shutil
@@ -18,7 +17,8 @@ import build  # noqa: E402
 
 PUBLIC = ROOT / 'public'
 DIST_FILES = ['VTuber変換辞書_MicrosoftIME.tsv', 'VTuber変換辞書_Google日本語入力.tsv', 'VTuber変換辞書_ATOK.tsv', 'VTuber変換辞書_macOS.plist']
-CHANGE_TYPES = {'追加': 'added', '削除': 'removed'}
+GENERATED = [ROOT / 'dist' / name for name in DIST_FILES] + [ROOT / 'data/additions.tsv']
+ZIP_README = ROOT / 'package/README.txt'
 
 
 def read_tsv(path):
@@ -27,36 +27,32 @@ def read_tsv(path):
 
 
 def regenerate_dist():
-    """Regenerate dist/ and fail if the committed files were stale."""
-    before = {name: (ROOT / 'dist' / name).read_bytes() for name in DIST_FILES}
+    """Regenerate dist/ and additions.tsv, and fail if the committed files were stale."""
+    before = {path: path.read_bytes() for path in GENERATED}
     build.main()
-    stale = [name for name in DIST_FILES if (ROOT / 'dist' / name).read_bytes() != before[name]]
+    stale = [path.name for path in GENERATED if path.read_bytes() != before[path]]
     if stale:
-        raise SystemExit('dist/ が master.tsv と一致しません。python scripts/build.py を実行してコミットしてください: ' + ', '.join(stale))
+        raise SystemExit('生成ファイルが master.tsv と一致しません。python scripts/build.py を実行してコミットしてください: ' + ', '.join(stale))
 
 
 def read_changes(rows):
-    pairs = {(r['reading'], r['word']) for r in rows}
+    """Group the rows F-VTD added by their added_on date, newest first."""
     changes = {}
-    for number, c in enumerate(read_tsv(ROOT / 'data/changelog.tsv'), 2):
-        datetime.date.fromisoformat(c['date'])
-        kind = CHANGE_TYPES.get(c['change'])
-        if not kind:
-            raise ValueError(f'changelog.tsv line {number}: change は「追加」か「削除」にしてください')
-        pair = (c['reading'], c['word'])
-        if (pair in pairs) != (kind == 'added'):
-            raise ValueError(f'changelog.tsv line {number}: {pair} の{c["change"]}が master.tsv と合いません')
-        entry = changes.setdefault(c['date'], {'date': c['date'], 'title': '辞書を更新', 'added': [], 'removed': []})
-        entry[kind].append({'reading': c['reading'], 'word': c['word']})
+    for r in rows:
+        if r['origin'] == 'added':
+            entry = changes.setdefault(r['added_on'], {'date': r['added_on'], 'title': '辞書を更新', 'added': [], 'removed': []})
+            entry['added'].append({'reading': r['reading'], 'word': r['word']})
     return sorted(changes.values(), key=lambda c: c['date'], reverse=True)
 
 
-def write_zip(path, folder):
+def write_zip(path, folder, readme):
+    entries = [(name, (ROOT / 'dist' / name).read_bytes()) for name in DIST_FILES]
+    entries += [('README.txt', readme.encode('utf-8-sig')), ('NOTICE.md', (ROOT / 'NOTICE.md').read_bytes())]
     with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
-        for src in [ROOT / 'dist' / name for name in DIST_FILES] + [ROOT / 'README.md', ROOT / 'NOTICE.md']:
-            info = zipfile.ZipInfo(f'{folder}/{src.name}', date_time=(2026, 1, 1, 0, 0, 0))
+        for name, data in entries:
+            info = zipfile.ZipInfo(f'{folder}/{name}', date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
-            z.writestr(info, src.read_bytes())
+            z.writestr(info, data)
 
 
 def main():
@@ -66,7 +62,7 @@ def main():
     latest = changes[0]['date'] if changes else '2026-09-03'
     # Hash everything that goes into the published files, so any change gets new URLs (they are cached as immutable).
     sha = hashlib.sha256()
-    for path in [ROOT / 'data/master.tsv', ROOT / 'README.md', ROOT / 'NOTICE.md']:
+    for path in [ROOT / 'data/master.tsv', ZIP_README, ROOT / 'NOTICE.md']:
         sha.update(path.read_bytes())
     digest = sha.hexdigest()[:8]
     version = latest.replace('-', '') + '-' + digest
@@ -80,7 +76,8 @@ def main():
     search = [{'reading': r['reading'], 'word': r['word'], 'excluded': []} for r in rows]
     (files / 'search.json').write_text(json.dumps(search, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
     zip_name = f'F-VTD-{version}.zip'
-    write_zip(files / zip_name, f'F-VTD-{version}')
+    readme = ZIP_README.read_text(encoding='utf-8').replace('{version}', version).replace('{count}', f'{len(rows):,}')
+    write_zip(files / zip_name, f'F-VTD-{version}', readme)
 
     manifest = {
         'version': version,
