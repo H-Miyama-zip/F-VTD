@@ -1,0 +1,5 @@
+*.md text eol=lf
+*.py text eol=lf
+/data/*.tsv text eol=lf
+/dist/*.tsv -text
+*.plist text eol=lf
