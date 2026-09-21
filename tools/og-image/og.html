@@ -1,0 +1,43 @@
+<!doctype html>
+<!-- X・SNSのリンクカード用画像（1200×630）の元データ。書き出し方は同じフォルダーの README.md を参照。 -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    font-family: 'Yu Gothic UI', 'Yu Gothic', 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif;
+    background: #fff; color: #282828; position: relative;
+  }
+  .band { position: absolute; left: 0; top: 0; width: 100%; height: 14px; background: #b52b35; }
+  .wrap { position: absolute; left: 88px; top: 72px; right: 88px; }
+  .brand { display: flex; align-items: center; gap: 28px; }
+  .mark {
+    width: 124px; height: 124px; border-radius: 30px; background: #b52b35; color: #fff;
+    font: 900 92px/124px 'Segoe UI', Arial, sans-serif; text-align: center;
+  }
+  .name { font: 800 104px/1 'Segoe UI', Arial, sans-serif; letter-spacing: -2px; color: #b52b35; }
+  .caption { font-size: 40px; font-weight: 700; margin-top: 10px; }
+  .lead { font-size: 44px; font-weight: 700; line-height: 1.45; margin-top: 64px; }
+  .lead strong { color: #b52b35; }
+  .tags { display: flex; gap: 14px; margin-top: 30px; flex-wrap: wrap; }
+  .tags span { border: 2px solid #d8d8d8; border-radius: 6px; padding: 8px 18px; font-size: 26px; font-weight: 600; color: #444; }
+  .url { position: absolute; left: 88px; bottom: 46px; font: 600 28px 'Segoe UI', Arial, sans-serif; color: #656565; }
+</style>
+</head>
+<body>
+  <div class="band"></div>
+  <div class="wrap">
+    <div class="brand">
+      <div class="mark">F</div>
+      <div>
+        <div class="name">F-VTD</div>
+        <div class="caption">VTuber変換辞書</div>
+      </div>
+    </div>
+    <div class="lead">VTuberの名前を、日本語入力でそのまま変換。<br><strong>20,000語以上</strong>を収録した無料のユーザー辞書です。</div>
+    <div class="tags"><span>Microsoft IME</span><span>Google日本語入力</span><span>ATOK</span><span>macOS</span></div>
+  </div>
+  <div class="url">f-vtd.tomaranaina.workers.dev</div>
+</body>
+</html>
