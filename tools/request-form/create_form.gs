@@ -45,9 +45,9 @@ const TYPE = {
 
 const COLUMN = { lookup: '辞書照合', status: '対応状況', memo: '対応メモ' };
 
-const READING_PATTERN = '^[ぁ-ゖー]+$';
-const READINGS_PATTERN = '^[ぁ-ゖー]+([、,， 　]+[ぁ-ゖー]+)*$';
-const READING_HELP = 'ひらがなで入力してください（長音「ー」は使えます）。英数字を含む読みは「補足」欄にお書きください。';
+const READING_PATTERN = '^[ぁ-ゖァ-ヶー]+$';
+const READINGS_PATTERN = '^[ぁ-ゖァ-ヶー]+([、,， 　]+[ぁ-ゖァ-ヶー]+)*$';
+const READING_HELP = 'ひらがな・カタカナで入力してください（長音「ー」も使えます）。英数字を含む読みは「補足」欄にお書きください。';
 
 function setup() {
   const props = PropertiesService.getScriptProperties();
@@ -206,6 +206,7 @@ function handleSubmit(e) {
 
   const type = get(Q.type);
   const name = get(Q.newName) || get(Q.addName) || get(Q.fixName);
+  // 辞書の読みはひらがななので、カタカナで書かれた読みはひらがなに直して照合する。
   const readings = splitReadings_([get(Q.newReading), get(Q.newShortReadings), get(Q.addReadings), get(Q.fixCorrectReading)].join('、'));
 
   let lookup;
@@ -243,7 +244,11 @@ function handleSubmit(e) {
 }
 
 function splitReadings_(text) {
-  return text.split(/[、,，\s　]+/).map((r) => r.trim()).filter(Boolean);
+  return text.split(/[、,，\s　]+/).map((r) => toHiragana_(r.trim())).filter(Boolean);
+}
+
+function toHiragana_(text) {
+  return text.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
 }
 
 function normalize_(text) {
