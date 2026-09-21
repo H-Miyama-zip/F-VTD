@@ -1,0 +1,14 @@
+// Cloudflare Workers の設定。静的ファイルだけを配信し、Worker のプログラムは持たない。
+// 公開するファイルは scripts/build_site.py が public/ に作る。手順は docs/SITE.md を参照。
+{
+  "name": "f-vtd",
+  "compatibility_date": "2026-09-18",
+  "assets": {
+    "directory": "public"
+  },
+  "workers_dev": true,
+  "preview_urls": true,
+  "observability": {
+    "enabled": true
+  }
+}

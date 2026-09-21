@@ -23,7 +23,7 @@ VTuber変換辞書 ver1_2（とぷんろぷ氏、2026-09-03）を基にした非
 
 ## 検索サイト
 
-名前・読みの検索と辞書のダウンロードができるサイトの構成・更新手順は [docs/SITE.md](docs/SITE.md) を参照してください。
+<https://f-vtd.tomaranaina.workers.dev> で、名前・読みの検索と辞書のダウンロードができます。サイトの構成・更新手順は [docs/SITE.md](docs/SITE.md) を参照してください。
 
 ## 出典・利用条件
 
