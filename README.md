@@ -6,7 +6,7 @@ VTuber変換辞書 ver1_2（とぷんろぷ氏、2026-09-03）を基にした非
 
 2026-09-21：原版20,014語に36語を追加し、合計20,050語。
 
-追加内容・確認元は [data/additions-fukui.tsv](data/additions-fukui.tsv) を参照してください。
+追加内容・確認元は [data/additions.tsv](data/additions.tsv) を参照してください。
 
 ## ダウンロード・導入
 

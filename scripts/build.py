@@ -24,7 +24,7 @@ def main():
     for name, pos in [('Google日本語入力', 'google_pos'), ('MicrosoftIME', 'microsoft_pos'), ('ATOK', 'atok_pos')]:
         lines = []
         if name == 'MicrosoftIME':
-            lines = ['!Microsoft IME Dictionary Tool', '!Format:WORDLIST', '!VTuber変換辞書 福井関連追加版', '!利用条件・変更内容はリポジトリのREADME.mdとNOTICE.mdを参照']
+            lines = ['!Microsoft IME Dictionary Tool', '!Format:WORDLIST', '!F-VTD VTuber変換辞書', '!利用条件・変更内容はリポジトリのREADME.mdとNOTICE.mdを参照']
         lines += ['\t'.join((r['reading'], r['word'], r[pos])) for r in rows]
         (out / f'VTuber変換辞書_{name}.tsv').write_bytes(('\r\n'.join(lines) + '\r\n').encode('utf-16'))
     data = [{'phrase': r['word'], 'shortcut': r['reading']} for r in rows]
