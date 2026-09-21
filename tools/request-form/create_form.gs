@@ -79,85 +79,99 @@ function setup() {
   Logger.log('通知メールの送信先: ' + email);
 }
 
+// フォームの文言。buildForm_() と syncForm() の両方がここを使う。
+const DESCRIPTION = [
+  'F-VTD（VTuber変換辞書 ver1_2 を基にした非公式の改変版）への収録依頼フォームです。',
+  '未収録のVTuberの追加、読みの追加、名前や読みの誤りの訂正を受け付けます。1回の送信につき1名分をお送りください。',
+  '',
+  '・原作者（とぷんろぷ氏）の窓口ではありません。F-VTD についてのご連絡を原作者へ送らないでください。',
+  '・いただいた内容は、公式サイトなどで名前と読みを確認してから収録します。すべての依頼への対応や、反映の時期はお約束できません。',
+  '・収録した場合、名前・読み・確認元URLを GitHub で公開します。依頼者の立場と連絡先は公開しません。',
+  '',
+  '収録状況の検索と辞書のダウンロード：' + CONFIG.siteUrl,
+].join('\n');
+
+const CONFIRMATION = '送信ありがとうございました。内容を確認のうえ、収録を検討します。反映された内容は ' + CONFIG.siteUrl + ' の「更新履歴」でご確認いただけます。';
+
+const PAGE = {
+  new: '新規収録',
+  add: '読みの追加',
+  fix: '誤りの訂正',
+  common: '確認元と依頼者について',
+};
+
+// 説明文。ここにない設問・ページの説明文は syncForm() で変更しない。
+const HELP = {
+  [PAGE.new]: '辞書に未収録のVTuberについてお書きください。収録済みかどうかは ' + CONFIG.siteUrl + ' で検索できます。',
+  [PAGE.add]: '辞書に収録済みのVTuberに、別の読みを追加します。',
+  [PAGE.fix]: '辞書に収録済みの名前・読みの誤りを直します。',
+  [Q.newName]: '公式の表記どおりにお書きください。例：キズナアイ',
+  [Q.newReading]: '例：きずなあい　' + READING_HELP,
+  [Q.newShortReadings]: '下の名前や、よく呼ばれる短い読みでも変換できるように登録します。例：あい　複数ある場合は「、」で区切ってください。' + READING_HELP,
+  [Q.newAffiliation]: '事務所・グループ名、個人勢、自治体の公認VTuberなど。',
+  [Q.addReadings]: '複数ある場合は「、」で区切ってください。' + READING_HELP,
+  [Q.fixCorrectName]: '名前の表記を直す場合のみ。',
+  [Q.fixCorrectReading]: '読みを直す場合のみ。' + READING_HELP,
+  [Q.sourceUrl]: '名前と読みを確認できるページのURL。公式サイト、本人のX・YouTube、運営元・自治体のお知らせなどを優先してください。複数ある場合は改行で区切ってください。',
+  [Q.note]: '任意。読みの根拠（配信での名乗りなど）や、その他お伝えしたいことがあればお書きください。',
+  [Q.contact]: '任意。確認のため連絡してよい場合のみ、XのIDやメールアドレスをお書きください。返信のため以外には使わず、公開もしません。',
+};
+
+// 読みの欄の入力チェック。
+const READING_VALIDATION = {
+  [Q.newReading]: READING_PATTERN,
+  [Q.newShortReadings]: READINGS_PATTERN,
+  [Q.addReadings]: READINGS_PATTERN,
+  [Q.fixCorrectReading]: READING_PATTERN,
+};
+
 function buildForm_() {
   const form = FormApp.create(CONFIG.formTitle);
   form
-    .setDescription([
-      'F-VTD（VTuber変換辞書 ver1_2 を基にした非公式の改変版）への収録依頼フォームです。',
-      '未収録のVTuberの追加、読みの追加、名前や読みの誤りの訂正を受け付けます。1回の送信につき1名分をお送りください。',
-      '',
-      '・原作者（とぷんろぷ氏）の窓口ではありません。F-VTD についてのご連絡を原作者へ送らないでください。',
-      '・いただいた内容は、公式サイトなどで名前と読みを確認してから収録します。すべての依頼への対応や、反映の時期はお約束できません。',
-      '・収録した場合、名前・読み・確認元URLを GitHub で公開します。依頼者の立場と連絡先は公開しません。',
-      '',
-      '収録状況の検索と辞書のダウンロード：' + CONFIG.siteUrl,
-    ].join('\n'))
-    .setConfirmationMessage('送信ありがとうございました。内容を確認のうえ、収録を検討します。反映された内容は ' + CONFIG.siteUrl + ' の「更新履歴」でご確認いただけます。')
+    .setDescription(DESCRIPTION)
+    .setConfirmationMessage(CONFIRMATION)
     .setCollectEmail(false)
     .setAllowResponseEdits(false)
     .setProgressBar(true);
 
+  const page = (title) => form.addPageBreakItem().setTitle(title).setHelpText(HELP[title] || '');
+  const text = (title) => {
+    const item = form.addTextItem().setTitle(title).setHelpText(HELP[title] || '');
+    if (READING_VALIDATION[title]) item.setValidation(textPattern_(READING_VALIDATION[title]));
+    return item;
+  };
+  const paragraph = (title) => form.addParagraphTextItem().setTitle(title).setHelpText(HELP[title] || '');
+
   const typeItem = form.addMultipleChoiceItem().setTitle(Q.type).setRequired(true);
 
-  // 新規収録
-  const newPage = form.addPageBreakItem()
-    .setTitle('新規収録')
-    .setHelpText('辞書に未収録のVTuberについてお書きください。収録済みかどうかは ' + CONFIG.siteUrl + ' で検索できます。');
-  form.addTextItem().setTitle(Q.newName)
-    .setHelpText('公式の表記どおりにお書きください。例：キズナアイ')
-    .setRequired(true);
-  form.addTextItem().setTitle(Q.newReading)
-    .setHelpText('例：きずなあい　' + READING_HELP)
-    .setValidation(textPattern_(READING_PATTERN))
-    .setRequired(true);
-  form.addTextItem().setTitle(Q.newShortReadings)
-    .setHelpText('下の名前や、よく呼ばれる短い読みでも変換できるように登録します。例：あい　複数ある場合は「、」で区切ってください。' + READING_HELP)
-    .setValidation(textPattern_(READINGS_PATTERN));
-  form.addTextItem().setTitle(Q.newAffiliation)
-    .setHelpText('事務所・グループ名、個人勢、自治体の公認VTuberなど。');
+  const newPage = page(PAGE.new);
+  text(Q.newName).setRequired(true);
+  text(Q.newReading).setRequired(true);
+  text(Q.newShortReadings);
+  text(Q.newAffiliation);
 
-  // 読みの追加
-  const addPage = form.addPageBreakItem()
-    .setTitle('読みの追加')
-    .setHelpText('辞書に収録済みのVTuberに、別の読みを追加します。');
-  form.addTextItem().setTitle(Q.addName)
-    .setRequired(true);
-  form.addTextItem().setTitle(Q.addReadings)
-    .setHelpText('複数ある場合は「、」で区切ってください。' + READING_HELP)
-    .setValidation(textPattern_(READINGS_PATTERN))
-    .setRequired(true);
+  const addPage = page(PAGE.add);
+  text(Q.addName).setRequired(true);
+  text(Q.addReadings).setRequired(true);
 
-  // 誤りの訂正
-  const fixPage = form.addPageBreakItem()
-    .setTitle('誤りの訂正')
-    .setHelpText('辞書に収録済みの名前・読みの誤りを直します。');
-  form.addTextItem().setTitle(Q.fixName)
-    .setRequired(true);
-  form.addParagraphTextItem().setTitle(Q.fixWrong)
-    .setRequired(true);
-  form.addTextItem().setTitle(Q.fixCorrectName)
-    .setHelpText('名前の表記を直す場合のみ。');
-  form.addTextItem().setTitle(Q.fixCorrectReading)
-    .setHelpText('読みを直す場合のみ。' + READING_HELP)
-    .setValidation(textPattern_(READING_PATTERN));
+  const fixPage = page(PAGE.fix);
+  text(Q.fixName).setRequired(true);
+  paragraph(Q.fixWrong).setRequired(true);
+  text(Q.fixCorrectName);
+  text(Q.fixCorrectReading);
 
-  // 共通
-  const commonPage = form.addPageBreakItem()
-    .setTitle('確認元と依頼者について');
-  form.addParagraphTextItem().setTitle(Q.sourceUrl)
-    .setHelpText('名前と読みを確認できるページのURL。公式サイト、本人のX・YouTube、運営元・自治体のお知らせなどを優先してください。複数ある場合は改行で区切ってください。')
+  const commonPage = page(PAGE.common);
+  paragraph(Q.sourceUrl)
     .setValidation(FormApp.createParagraphTextValidation()
       .requireTextContainsPattern('https?://')
       .setHelpText('http:// または https:// で始まるURLを1つ以上入力してください。')
       .build())
     .setRequired(true);
-  form.addParagraphTextItem().setTitle(Q.note)
-    .setHelpText('任意。読みの根拠（配信での名乗りなど）や、その他お伝えしたいことがあればお書きください。');
+  paragraph(Q.note);
   form.addMultipleChoiceItem().setTitle(Q.requester)
     .setChoiceValues(['VTuber本人', '運営・事務所などの関係者', 'ファン・その他'])
     .setRequired(true);
-  form.addTextItem().setTitle(Q.contact)
-    .setHelpText('任意。確認のため連絡してよい場合のみ、XのIDやメールアドレスをお書きください。返信のため以外には使わず、公開もしません。');
+  text(Q.contact);
   form.addCheckboxItem().setTitle(Q.agree)
     .setChoiceValues(['すべての依頼に対応するとは限らないこと、収録時に名前・読み・確認元URLが公開されることを了承します'])
     .setRequired(true);
@@ -173,6 +187,33 @@ function buildForm_() {
   commonPage.setGoToPage(FormApp.PageNavigationType.CONTINUE);
 
   return form;
+}
+
+/**
+ * setup() で作ったフォームに、このファイルの説明文・送信後メッセージ・読みの入力チェックを反映する。
+ * 設問の追加・削除・並べ替えはしないので、回答・設問ID・サイトの依頼ボタンはそのまま使える。
+ * 文言を変えたら、このファイルを Apps Script に貼り直して syncForm を実行する。
+ */
+function syncForm() {
+  const formId = PropertiesService.getScriptProperties().getProperty('formId');
+  if (!formId) throw new Error('フォームIDが記録されていません。setup() を実行したプロジェクトで実行してください。');
+  const form = FormApp.openById(formId);
+  form.setDescription(DESCRIPTION).setConfirmationMessage(CONFIRMATION);
+
+  const changed = [];
+  form.getItems().forEach((item) => {
+    const title = item.getTitle();
+    if (HELP[title] !== undefined && item.getHelpText() !== HELP[title]) {
+      item.setHelpText(HELP[title]);
+      changed.push(title + '（説明文）');
+    }
+    if (READING_VALIDATION[title] && item.getType() === FormApp.ItemType.TEXT) {
+      item.asTextItem().setValidation(textPattern_(READING_VALIDATION[title]));
+      changed.push(title + '（入力チェック）');
+    }
+  });
+  Logger.log('フォームの説明文と送信後メッセージを更新しました。');
+  Logger.log('更新した設問：' + (changed.join('、') || 'なし'));
 }
 
 function textPattern_(pattern) {
