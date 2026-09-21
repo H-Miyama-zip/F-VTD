@@ -25,6 +25,12 @@ VTuber変換辞書 ver1_2（とぷんろぷ氏、2026-09-03）を基にした非
 
 <https://f-vtd.tomaranaina.workers.dev> で、名前・読みの検索と辞書のダウンロードができます。サイトの構成・更新手順は [docs/SITE.md](docs/SITE.md) を参照してください。
 
+## 収録の依頼・誤りのお知らせ
+
+未収録のVTuberの追加、読みの追加、名前や読みの誤りの訂正は、[収録依頼フォーム](https://docs.google.com/forms/d/e/1FAIpQLSfPnkf9U3Ut1OrpjrpTryg-yYFmgK8Ct03w9phtO1GAHIQIGQ/viewform)で受け付けています。検索サイトで見つからなかった名前は、検索結果のボタンからそのまま依頼できます。GitHubのIssueでも受け付けます。
+
+F-VTDについてのご連絡を、原作者の窓口へ送らないでください。
+
 ## 出典・利用条件
 
 [NOTICE.md](NOTICE.md) を参照してください。原配布物そのものはGit管理から除外しています。
