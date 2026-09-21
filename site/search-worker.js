@@ -1,0 +1,2 @@
+let rows=[];
+self.onmessage=({data})=>{if(data.type==='load'){rows=data.rows;postMessage({type:'ready'});return}const{q,page=1,id}=data;const exact=[],partial=[];for(const row of rows){if(row.word===q||row.reading===q)exact.push(row);else if(row.word.includes(q)||row.reading.includes(q))partial.push(row)}postMessage({type:'results',id,q,page,exact,total:partial.length,items:partial.slice((page-1)*20,page*20)});};
