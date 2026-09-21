@@ -7,3 +7,14 @@
 .request-box p{margin:0 0 12px}
 .request-box a{display:inline-block;padding:10px 16px;border:1px solid #b52b35;color:#9b2029;border-radius:3px;background:#fff;font-weight:600;overflow-wrap:anywhere}
 .request-box a:hover{background:#fff4f4;text-decoration:none}
+
+/* Download entry points: header button + highlighted panel. */
+header{flex-wrap:wrap}header nav{margin-left:auto}
+.header-download{display:inline-flex;align-items:baseline;gap:8px;background:var(--accent);color:#fff;border-radius:3px;padding:10px 18px;font-size:15px;font-weight:700;white-space:nowrap;box-shadow:0 1px 0 rgba(0,0,0,.15)}
+.header-download small{font-size:11px;font-weight:600;background:#fff;color:var(--accent);border-radius:2px;padding:1px 5px}
+.header-download:hover{background:#90212a;text-decoration:none}
+.download-panel{background:#fff6f6;border:2px solid var(--accent);border-radius:4px;scroll-margin-top:20px}
+.download-panel h2{font-size:21px;color:var(--accent)}
+.download-button{background:var(--accent);color:#fff;border-color:var(--accent);font-size:16px;font-weight:700;padding:15px 8px}
+.download-button:hover{background:#90212a}
+@media(max-width:700px){header nav{margin-left:0}.header-download{order:3;width:100%;justify-content:center;padding:12px 18px;font-size:16px}.download-panel{border-width:2px}}

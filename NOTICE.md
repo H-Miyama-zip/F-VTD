@@ -2,7 +2,7 @@
 
 本データは、とぷんろぷ（@tpmorp_otm）氏による「VTuber変換辞書」ver1_2（2026-09-03）を改変したものです。
 
-原配布元：<https://conca.cc/d/vtdic>
+原版の販売元：<https://windvirtual.booth.pm/items/8723895>
 
 原版同梱READMEの利用条件は以下のとおりです。
 
