@@ -12,6 +12,7 @@
 const CONFIG = {
   formTitle: 'F-VTD 収録依頼フォーム',
   repoUrl: 'https://github.com/H-Miyama-zip/F-VTD',
+  siteUrl: 'https://f-vtd.tomaranaina.workers.dev',
   masterTsvUrl: 'https://raw.githubusercontent.com/H-Miyama-zip/F-VTD/main/data/master.tsv',
   statusOptions: ['未対応', '調査中', '収録済み', '見送り'],
 };
@@ -37,9 +38,9 @@ const Q = {
 };
 
 const TYPE = {
-  new: '新規収録（辞書に未収録のVTuberを追加）',
-  add: '読みの追加（収録済みのVTuberに別の読みを追加）',
-  fix: '誤りの訂正（名前の表記や読みの誤りを直す）',
+  new: '新規収録（辞書に未収録のVTuberを追加してほしい）',
+  add: '読みの追加（収録済みのVTuberに別の読みを追加してほしい）',
+  fix: '誤りの訂正（名前の表記や読みの誤りを直してほしい）',
 };
 
 const COLUMN = { lookup: '辞書照合', status: '対応状況', memo: '対応メモ' };
@@ -89,9 +90,9 @@ function buildForm_() {
       '・いただいた内容は、公式サイトなどで名前と読みを確認してから収録します。すべての依頼への対応や、反映の時期はお約束できません。',
       '・収録した場合、名前・読み・確認元URLを GitHub で公開します。依頼者の立場と連絡先は公開しません。',
       '',
-      '辞書の配布と収録状況：' + CONFIG.repoUrl,
+      '収録状況の検索と辞書のダウンロード：' + CONFIG.siteUrl,
     ].join('\n'))
-    .setConfirmationMessage('送信ありがとうございました。内容を確認のうえ、収録を検討します。反映された内容は GitHub の data/additions.tsv でご確認いただけます。')
+    .setConfirmationMessage('送信ありがとうございました。内容を確認のうえ、収録を検討します。反映された内容は ' + CONFIG.siteUrl + ' の「更新履歴」でご確認いただけます。')
     .setCollectEmail(false)
     .setAllowResponseEdits(false)
     .setProgressBar(true);
@@ -101,16 +102,16 @@ function buildForm_() {
   // 新規収録
   const newPage = form.addPageBreakItem()
     .setTitle('新規収録')
-    .setHelpText('辞書に未収録のVTuberについてお書きください。収録済みかどうかは GitHub の data/master.tsv で検索できます。');
+    .setHelpText('辞書に未収録のVTuberについてお書きください。収録済みかどうかは ' + CONFIG.siteUrl + ' で検索できます。');
   form.addTextItem().setTitle(Q.newName)
-    .setHelpText('公式の表記どおりにお書きください。例：歩音ティナ')
+    .setHelpText('公式の表記どおりにお書きください。例：キズナアイ')
     .setRequired(true);
   form.addTextItem().setTitle(Q.newReading)
-    .setHelpText('例：あるねてぃな　' + READING_HELP)
+    .setHelpText('例：きずなあい　' + READING_HELP)
     .setValidation(textPattern_(READING_PATTERN))
     .setRequired(true);
   form.addTextItem().setTitle(Q.newShortReadings)
-    .setHelpText('下の名前や、よく呼ばれる短い読みでも変換できるように登録します。例：てぃな　複数ある場合は「、」で区切ってください。' + READING_HELP)
+    .setHelpText('下の名前や、よく呼ばれる短い読みでも変換できるように登録します。例：あい　複数ある場合は「、」で区切ってください。' + READING_HELP)
     .setValidation(textPattern_(READINGS_PATTERN));
   form.addTextItem().setTitle(Q.newAffiliation)
     .setHelpText('事務所・グループ名、個人勢、自治体の公認VTuberなど。');
@@ -133,7 +134,6 @@ function buildForm_() {
   form.addTextItem().setTitle(Q.fixName)
     .setRequired(true);
   form.addParagraphTextItem().setTitle(Q.fixWrong)
-    .setHelpText('例：読みが「ひびきめもりー」になっている')
     .setRequired(true);
   form.addTextItem().setTitle(Q.fixCorrectName)
     .setHelpText('名前の表記を直す場合のみ。');
