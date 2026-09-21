@@ -14,7 +14,7 @@ F-VTD の検索・ダウンロード用サイトは、このリポジトリか�
 | `wrangler.jsonc` | Workers の設定。`public/` を静的ファイルとして配信する |
 | `public/` | 公開されるファイル一式。生成物なのでGit管理しない |
 
-`main` に push すると、Cloudflare が `python scripts/build_site.py` で `public/` を作り、`npx wrangler deploy` で公開します。版の名前は「更新履歴の最新の日付＋`master.tsv` のハッシュ」です（例：`20260921-dc11b032`）。
+`main` に push すると、Cloudflare が `python scripts/build_site.py` で `public/` を作り、`npx wrangler deploy` で公開します。版の名前は「更新履歴の最新の日付＋ハッシュ」です（例：`20260921-1a2b3c4d`）。ハッシュは `master.tsv`・`README.md`・`NOTICE.md` から計算するため、ZIPに入るファイルが変わると版の名前とURLも変わります。検索用データとZIPは版ごとのURLで配信し、長期間キャッシュさせています。
 
 ビルドは次の場合に失敗し、公開中のサイトは前の版のまま残ります。
 

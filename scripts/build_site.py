@@ -64,7 +64,11 @@ def main():
     rows = read_tsv(ROOT / 'data/master.tsv')
     changes = read_changes(rows)
     latest = changes[0]['date'] if changes else '2026-09-03'
-    digest = hashlib.sha256((ROOT / 'data/master.tsv').read_bytes()).hexdigest()[:8]
+    # Hash everything that goes into the published files, so any change gets new URLs (they are cached as immutable).
+    sha = hashlib.sha256()
+    for path in [ROOT / 'data/master.tsv', ROOT / 'README.md', ROOT / 'NOTICE.md']:
+        sha.update(path.read_bytes())
+    digest = sha.hexdigest()[:8]
     version = latest.replace('-', '') + '-' + digest
 
     if PUBLIC.exists():
