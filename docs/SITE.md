@@ -1,58 +1,48 @@
-# 検索サイト（Cloudflare Workers）
+# 検索サイト
 
-公開URL：<https://f-vtd.tomaranaina.workers.dev>
+F-VTDの検索・配布用静的サイトです。画面は `site/`、生成先は `public/`、現役の辞書は `data/master.tsv`、更新履歴は `data/ledger.jsonl` です。更新方法・日付・取消し・原版更新の手順は [LEDGER.md](LEDGER.md) を参照してください。
 
-F-VTD の検索・ダウンロード用サイトは、このリポジトリから Cloudflare Workers の無料プランで公開しています。Worker のプログラムは持たず、静的ファイルを配信するだけです。検索はすべて閲覧者のブラウザー内で行います。
+## ローカル確認
 
-## しくみ
+```powershell
+python scripts/ledger.py check
+python scripts/build.py --check
+python scripts/build_site.py --check
+python scripts/build_site.py
+python -m http.server 8788 --directory public
+```
 
-| パス | 役割 |
-| --- | --- |
-| `site/` | 画面のファイル（HTML・CSS・JS）、`config.json`（GitHub・フォームへのリンク）、`_headers`（キャッシュ設定） |
-| `data/master.tsv` の `added_on` 列 | サイトの「更新履歴」の元データ。追加した語の追加日 |
-| `package/README.txt` | ZIPに入れる利用者向けの案内。`{version}` と `{count}` はビルド時に埋め込む |
-| `scripts/build_site.py` | `dist/` を再生成・検査し、検索用データとZIPを作って `public/` にまとめる |
-| `wrangler.jsonc` | Workers の設定。`public/` を静的ファイルとして配信する |
-| `public/` | 公開されるファイル一式。生成物なのでGit管理しない |
+回帰テストは `python -m unittest discover -s tests -v` と `node --test tests/site.test.cjs` です。Nodeは画面処理のテストにだけ使い、辞書・サイト生成はPython標準ライブラリで動きます。画面テストは実際のapp.jsをDOM・検索Workerのスタブで実行し、実ブラウザーや実際の公開先への通信は行いません。
 
-`main` に push すると、Cloudflare が `python scripts/build_site.py` で `public/` を作り、`npx wrangler deploy` で公開します。版の名前は「更新履歴の最新の日付＋ハッシュ」です（例：`20260921-1a2b3c4d`）。ハッシュは `master.tsv`・`package/README.txt`・`NOTICE.md` から計算するため、ZIPに入るファイルが変わると版の名前とURLも変わります。検索用データとZIPは版ごとのURLで配信し、長期間キャッシュさせています。
+`--check` は読み取り専用です。サイトビルドは `dist/` と台帳を書き換えず、固定基準＋台帳の再現結果、現役master、4形式の整合性、公開確認記録を検査します。staleなdistは失敗します。辞書生成は `python scripts/build.py` で行います。検査失敗時は既存のdist/publicを変更しません。サイトは一時ディレクトリで完成させてから置換します。ディスク障害等によるdistの4ファイル置換全体の原子性は保証していません。
 
-ビルドは次の場合に失敗し、公開中のサイトは前の版のまま残ります。
+`public/` はGit管理外です。既存ディレクトリの置換には `.fvtd-generated` 印が必要です。旧ビルドで生成した印のないpublicがある場合は内容を確認して別の場所に保管するか、別の新規出力先を指定してください：
 
-- `master.tsv` に空欄・重複がある
-- コミットされた `dist/` が `master.tsv` から生成したものと一致しない（`python scripts/build.py` の実行忘れ）
-- 追加した行（`origin` が `added`）に追加日（`added_on`）か確認元URL（`source_url`）がない
-- コミットされた `data/additions.tsv` が `master.tsv` から生成したものと一致しない
+```powershell
+python scripts/build_site.py --output C:\path\to\fresh-preview
+```
 
-`main` 以外のブランチを push すると、本番とは別のプレビュー用URLに公開されます。Cloudflare のダッシュボードでビルドのログから確認できます。
+## 配布版と履歴
 
-## 辞書を更新するとき
+- 版は「最新適用日＋SHA-256の先頭16桁」です。導入前しか記録がない場合は旧記録の追加日、さらに不明なら原版の日付を使い、その意味もmanifestに保存します。
+- `updatedOn` はその日付、`dateMeaning` は日付の意味です。既存画面との互換用 `updatedAt` の日本時間00:00は表示のための正規化で、実際の適用時刻や公開時刻を表しません。`release.json` の `appliedThrough` は導入後の適用日がない場合nullです。
+- 版のハッシュ入力は、実際の4辞書と検索JSON、版を埋め込む前のZIP用README、NOTICE、台帳、基準情報、原版ハッシュ、生成コード、Python・圧縮ランタイムです。版を含むZIPやrelease.jsonを入力に戻しません。
+- `public/files/<version>/` に4辞書、通常検索JSON、ZIP、`release.json` を保存します。ZIPは4辞書・README.txt・NOTICE.md・release.jsonを含みます。
+- サイトの検索・ダウンロードは現在の版だけを案内します。次版の生成時に旧版のpublicファイルは置き換わり、旧版URLでの継続配布は終了します。旧URLを最新版の内容で上書きして再利用しません。
+- 公開を確認した版の実ZIPとrelease.jsonは、公開確認コマンドが `releases/<version>/` に保管します。サイト配信対象のpublicへはコピーしません。Git管理対象なので、保管物と公開記録を一緒に引き継げます。ローカルビルドだけでは保管物も公開記録も増えません。
+- `release.json` は更新単位ID、個別変更ID、生成入力と辞書・検索のハッシュを保存します。`public/data/latest.json` は同じ版とIDを指し、ZIPハッシュも保存します。
+- 更新履歴は追加・訂正の前後・削除・内容取消し・記録訂正を表示します。導入前の復元記録、適用済み、公開確認済みを区別します。詳細の理由・根拠・確認日も表示します。
+- 同日の履歴は台帳への追記順を逆にして新しい更新を先頭に表示します。IDの文字順では並べません。
+- 通常検索JSONはmasterだけを使い、履歴中の旧読みや削除行を含めません。保留・下書きは履歴や配布物へ入れません。
+- 公開確認記録は `data/publications.jsonl` です。ローカル生成は追記しません。公開日時不明の過去版を公開済みと推定しません。公開確認後の追記はmanifestの状態だけを変え、同じ版のimmutableな辞書・検索JSON・ZIPを変更しません。
+- 開いている画面も定期確認と再表示時に公開確認の表示を更新します。同じ版の公開状態だけが変わる場合、検索データと検索処理を読み直しません。
+- 同じ版で辞書のURL・ハッシュ・更新履歴などが変わったmanifestは公開状態だけの更新として受け入れません。
+- `_headers` の `/files/*` のimmutable設定を維持しています。コード変更による生成内容の変化も新しい版とURLになります。
 
-1. `data/master.tsv` に行を追加する。`origin` は `added`、`added_on` に追加日（例：`2026-09-21`）、`source_url` に確認元URL、必要なら `note` に注記を書く。編集するのはこのファイルだけです。
-2. `python scripts/build.py` で `dist/` と `data/additions.tsv` を作り直す。
-3. `python scripts/build_site.py` でサイトを作り、必要なら手元で確認する：`python -m http.server 8788 --directory public` → <http://localhost:8788>
-4. コミットして push する。1分ほどでサイトに反映されます。
+同じ確定入力・同じ圧縮ランタイムなら生成物は再現します。JSONLの意味が同じなら改行コードだけの差は版に影響しません。固定基準TSVは元のLFバイト列を保ちます。
 
-語の削除を更新履歴に載せる仕組みは、まだありません。削除や改名の方針を決めるときに用意します。
+## ホスティングについて
 
-収録依頼フォームのURLは `site/config.json` の `formUrl` に書くと、「収録候補・修正の連絡」にボタンが出ます。
+既存の設定は `wrangler.jsonc` です。GitHub連携はpush時にビルド・公開を実行し、main以外もプレビュー公開になり得ます。ローカル検証だけの作業ではpushやdeployを実行しないでください。今回の導入では設定の変更も公開の実行もしていません。
 
-## 現在の Cloudflare の設定
-
-作り直すときの参考として記録します。
-
-- 種類：Workers（GitHub の `H-Miyama-zip/F-VTD` と連携）
-- Worker 名：`f-vtd`（`wrangler.jsonc` の `name` と一致させる）
-- 本番ブランチ：`main`
-- ビルド コマンド：`python scripts/build_site.py`
-- デプロイ コマンド：`npx wrangler deploy`
-
-作り直す場合は、ダッシュボードの「Workers & Pages」→「作成」→「Workers」→「リポジトリをインポート」から、上の設定で作成します。
-
-## 無料プランの範囲
-
-- 静的ファイルの配信：回数・転送量とも無制限。Worker のプログラムが動かないため、無料プランの「1日10万リクエスト」の上限にも数えられません。
-- ファイル：1バージョンあたり2万個まで、1ファイル25MiBまで。現在は9ファイルで、最大は検索用データ（約1.3MB）。
-- ビルド：月3,000分まで（1回40秒ほど）。push のたびに1回使われます。
-
-未収録の検索語を記録するなど、Worker のプログラムを足す場合は、その部分のリクエストが1日10万回の上限に数えられます。
+収録依頼フォーム等のリンクは `site/config.json` にあります。公開確認コマンドは公開そのものを実行しません。手順は [LEDGER.md](LEDGER.md) を参照してください。
