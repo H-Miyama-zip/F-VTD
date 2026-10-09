@@ -37,11 +37,12 @@ async function app(initial, appSource=source) {
   const nodes = new Map();
   const document={hidden:false,activeElement:null};
   const get = id => {if(!nodes.has(id))nodes.set(id,Object.assign(new Element(),{owner:document}));return nodes.get(id);};
-  let current = clone(initial), workers = 0;
+  let current = clone(initial), workers = 0, dataFailure = false, workerFailure = false;
+  const workerObjects = [];
   class Worker {
-    constructor(){workers++;}
-    postMessage(){queueMicrotask(()=>this.onmessage({data:{type:'ready'}}));}
-    terminate(){}
+    constructor(){workers++;this.terminated=false;this.messages=[];workerObjects.push(this);}
+    postMessage(message){this.messages.push(clone(message));if(message.type==='load')queueMicrotask(()=>workerFailure?this.onerror(Error('fixture worker failure')):this.onmessage({data:{type:'ready'}}));}
+    terminate(){this.terminated=true;}
   }
   const context = vm.createContext({URL, AbortSignal, setTimeout, clearTimeout, Worker,
     setInterval(){}, location:{href:'https://example.test/'},
@@ -50,13 +51,14 @@ async function app(initial, appSource=source) {
       querySelector:get, addEventListener(){}}),
     fetch:async url=>({ok:true,json:async()=>{
       if(url==='/config.json')return {manifestUrl:'https://example.test/data/latest.json',demo:true};
-      if(String(url).endsWith('/search.json'))return Array.from({length:current.count},()=>({word:'架空乙',reading:'かこうおつ',excluded:[]}));
+      if(String(url).endsWith('/search.json')){if(dataFailure)throw Error('fixture data failure');return Array.from({length:current.count},()=>({word:'架空乙',reading:'かこうおつ',excluded:[]}));}
       return clone(current);
     }}),
   });
   await vm.runInContext(appSource,context);
   return {get, context, document, workers:()=>workers, manifest:value=>{current=clone(value);},
-    check:()=>vm.runInContext('check()',context)};
+    check:()=>vm.runInContext('check()',context), workerObjects,
+    failData:value=>{dataFailure=value;}, failWorker:value=>{workerFailure=value;}};
 }
 
 test('a malformed historical evidence link does not disable dictionary search', async()=>{
@@ -173,4 +175,73 @@ test('ledgerChanges publication refresh keeps the worker and protects row metada
   const forged=clone(confirmed);forged.ledgerChanges[0].removed[0].before.note='forged row note';
   screen.manifest(forged);await screen.check();
   assert.equal(vm.runInContext('manifest.ledgerChanges[0].removed[0].before.note',screen.context),undefined);
+});
+
+function legacyFixture() {
+  return {version:'legacy-version',count:1,updatedAt:'2026-09-21T00:00:00+09:00',
+    data:'../files/legacy-version/search.json',zip:'../files/legacy-version/F-VTD-legacy-version.zip',
+    changes:[{date:'2026-09-21',title:'旧形式の架空更新',
+      added:[{word:'架空旧追加',reading:'かこうきゅうついか'}],
+      removed:[{word:'架空旧削除',reading:'かこうきゅうさくじょ'}]}]};
+}
+
+test('new client loads the main legacy history without invented ledger metadata',async()=>{
+  const initial=legacyFixture(),screen=await app(initial),history=textContent(screen.get('changelog'));
+  assert.equal(vm.runInContext('ready',screen.context),true);
+  assert.equal(screen.get('search-button').disabled,false);
+  assert.match(history,/追加：架空旧追加（かこうきゅうついか）/);
+  assert.match(history,/削除：架空旧削除（かこうきゅうさくじょ）/);
+  assert.doesNotMatch(history,/undefined|適用済み|公開確認済み/);
+  assert.doesNotMatch(screen.get('version').textContent,/公開確認済み/);
+});
+
+test('open new client can switch to main legacy data and then back to ledger data',async()=>{
+  const initial=fixture(),screen=await app(initial),legacy=legacyFixture();
+  screen.manifest(legacy);await screen.check();await screen.get('apply-update').onclick();
+  assert.equal(vm.runInContext('manifest.version',screen.context),legacy.version);
+  assert.match(textContent(screen.get('changelog')),/追加：架空旧追加/);
+  assert.equal(screen.get('update-banner').hidden,true);
+  assert.equal(screen.workerObjects[0].terminated,true);
+  screen.manifest(initial);await screen.check();await screen.get('apply-update').onclick();
+  assert.equal(vm.runInContext('manifest.version',screen.context),initial.version);
+  assert.match(textContent(screen.get('changelog')),/架空の確認理由/);
+  assert.equal(screen.get('update-banner').hidden,true);
+  assert.equal(screen.workerObjects[1].terminated,true);
+  assert.equal(screen.workers(),3);
+});
+
+for(const failure of ['history','data','worker'])test(`${failure} update failure keeps the validated view, worker and current search`,async()=>{
+  const initial=fixture(),screen=await app(initial),candidate=clone(initial);
+  candidate.version='failed-version';candidate.zip='../files/failed-version/F-VTD-failed-version.zip';
+  vm.runInContext("search('架空',2,false)",screen.context);
+  screen.context.result={id:1,q:'架空',page:2,total:45,exact:[],items:[{word:'保持する架空結果',reading:'ほじ'}]};
+  vm.runInContext('showResults(result)',screen.context);
+  const oldWorker=screen.workerObjects[0],oldVersion=screen.get('version').textContent,
+    oldDownload=screen.get('download').href,oldHistory=screen.get('changelog').children[0],
+    oldResult=screen.get('candidates').children[0];
+  if(failure==='history')candidate.changes[0].removed[0].evidence=null;
+  if(failure==='data')screen.failData(true);
+  if(failure==='worker')screen.failWorker(true);
+  screen.manifest(candidate);await screen.check();await screen.get('apply-update').onclick();
+  assert.equal(vm.runInContext('manifest.version',screen.context),initial.version);
+  assert.equal(vm.runInContext('worker',screen.context),oldWorker);
+  assert.equal(oldWorker.terminated,false);
+  assert.equal(vm.runInContext('ready',screen.context),true);
+  assert.equal(vm.runInContext('current',screen.context),'架空');
+  assert.equal(vm.runInContext('page',screen.context),2);
+  assert.equal(screen.get('version').textContent,oldVersion);
+  assert.equal(screen.get('download').href,oldDownload);
+  assert.equal(screen.get('changelog').children[0],oldHistory);
+  assert.equal(screen.get('candidates').children[0],oldResult);
+  assert.equal(screen.get('update-banner').hidden,false);
+  assert.match(screen.get('status').textContent,/更新を取得できませんでした/);
+  if(failure==='worker')assert.equal(screen.workerObjects[1].terminated,true);
+  vm.runInContext("search('継続する架空検索',2,false)",screen.context);
+  assert.equal(oldWorker.messages.at(-1).q,'継続する架空検索');
+  screen.failData(false);screen.failWorker(false);
+  candidate.changes[0].removed[0].evidence=clone(initial.changes[0].removed[0].evidence);
+  screen.manifest(candidate);await screen.check();await screen.get('apply-update').onclick();
+  assert.equal(vm.runInContext('manifest.version',screen.context),candidate.version);
+  assert.equal(oldWorker.terminated,true);
+  assert.equal(screen.get('update-banner').hidden,true);
 });
