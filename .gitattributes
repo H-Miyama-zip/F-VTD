@@ -1,5 +1,10 @@
 *.md text eol=lf
 *.py text eol=lf
 /data/*.tsv text eol=lf
+# Trailing tabs preserve empty columns in the fixed nine-column baseline.
+/data/baseline/*.tsv text eol=lf whitespace=-blank-at-eol
+/data/*.jsonl text eol=lf
 /dist/*.tsv -text
 *.plist text eol=lf
+/releases/**/release.json -text
+/releases/**/*.zip -text
