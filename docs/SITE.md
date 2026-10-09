@@ -43,6 +43,14 @@ python scripts/build_site.py --output C:\path\to\fresh-preview
 
 ## ホスティングについて
 
-既存の設定は `wrangler.jsonc` です。GitHub連携はpush時にビルド・公開を実行し、main以外もプレビュー公開になり得ます。ローカル検証だけの作業ではpushやdeployを実行しないでください。今回の導入では設定の変更も公開の実行もしていません。
+設定は `wrangler.jsonc` です。本番のGitHub連携は `main` のpushで `python scripts/build_site.py` と `npx wrangler deploy` を実行します。作業ブランチへのpushは、本番の更新ではありません。
+
+CloudflareのWorker Previewsでは、作業ブランチを `npx wrangler preview` で別環境へ公開します。設定の `previews: {}` はこのコマンドに必要です。ブランチ用URLは `<preview-name>-f-vtd.tomaranaina.workers.dev`、個別デプロイ用URLは `<deployment-id>-f-vtd.tomaranaina.workers.dev` です。URLが有効な間は、知っている人が誰でもアクセスできます。
+
+通常はCloudflareの「プレビューブランチのビルド」と「プレビュー URL」をオフにし、リポジトリでも `preview_urls: false` を維持します。自動ビルドだけを止めても、既に公開したURLは閉じません。ダッシュボードでURLだけを止めても、設定が `true` のままだと後のデプロイで再び有効になる可能性があります。
+
+一時公開による検証は、公開するブランチと終了後の停止を確認してから行います。必要な間だけ自動プレビュー生成とプレビューURLを有効にし、検証後は両方をオフにして保存します。設定ファイルも `preview_urls: false` に戻し、自動ビルド停止後に作業ブランチへpushします。本番Worker URLはオンのままにします。最後にブランチ用URL、個別デプロイ用URL、両方のZIP URLがアクセス不可で、本番の版と配布URLが変わっていないことを確認します。
+
+2026-10-09には `codex/change-ledger` を一時公開し、検索・変更履歴・ZIPを検証してからプレビューを停止しました。このテストを本番の公開確認記録へ追記していません。今後のローカル検証では公開設定を変更する必要はありません。
 
 収録依頼フォーム等のリンクは `site/config.json` にあります。公開確認コマンドは公開そのものを実行しません。手順は [LEDGER.md](LEDGER.md) を参照してください。
