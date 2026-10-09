@@ -30,3 +30,7 @@ header{flex-wrap:wrap}header nav{margin-left:auto}
 footer .footer-x+span{margin-left:0}
 @media(max-width:700px){.x-link{display:flex;max-width:400px}}
 .change-item{padding:0.5rem 0;border-top:1px solid #eee}.change-item p{white-space:pre-wrap;overflow-wrap:anywhere}.change-item a{overflow-wrap:anywhere}
+
+#result-heading:focus-visible{outline:3px solid #185ca8;outline-offset:3px}
+.pagination{flex-wrap:wrap;gap:12px}.pagination span{overflow-wrap:anywhere;text-align:center}
+@media(max-width:400px){.pagination span{order:3;flex-basis:100%}}

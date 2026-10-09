@@ -26,21 +26,23 @@ def destination(root, version):
     return Path(root) / 'releases' / version_name(version)
 
 
-def validate_artifacts(root, release_bytes, zip_bytes):
+def validate_artifacts(root, release_bytes, zip_bytes, *, readme_template=None):
     """Validate the recorded historical snapshot, independently of today's master/code."""
     descriptor = json.loads(release_bytes)
-    ledger.require(set(descriptor) == {'version', 'count', 'updatedOn', 'appliedThrough',
-                                      'dateMeaning', 'updateIds', 'changeIds', 'hashes', 'inputs'},
+    fields = {'version', 'count', 'updatedOn', 'appliedThrough', 'dateMeaning',
+              'updateIds', 'changeIds', 'hashes', 'inputs'}
+    ledger.require(set(descriptor) in (fields, fields | {'readmeTemplate'}),
                    'Invalid release descriptor')
     version = version_name(descriptor['version'])
     ledger.date(descriptor['updatedOn'])
     hashes, inputs = descriptor['hashes'], descriptor['inputs']
-    ledger.require(isinstance(hashes, dict) and set(hashes) == set(build.DIST_FILES + ['search.json']),
+    output_names = set(build.DIST_FILES + ['search.json'])
+    ledger.require(isinstance(hashes, dict) and set(hashes) in (output_names, output_names | {'README.txt'}),
                    'Invalid release hashes')
     ledger.require(isinstance(inputs, dict), 'Invalid release inputs')
     for value in hashes.values():
         ledger.require(isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value), 'Invalid release SHA-256')
-    ledger.require(all(inputs.get(name) == value for name, value in hashes.items()), 'Release output inputs disagree')
+    ledger.require(all(inputs.get(name) == hashes[name] for name in output_names), 'Release output inputs disagree')
     expected_version = descriptor['updatedOn'].replace('-', '') + '-' + ledger.digest(ledger.canonical(inputs))[:16]
     ledger.require(version == expected_version, 'Release version/input mismatch')
 
@@ -77,6 +79,18 @@ def validate_artifacts(root, release_bytes, zip_bytes):
     for name in build.DIST_FILES:
         ledger.require(ledger.digest(entries[name]) == hashes[name], 'ZIP dictionary hash mismatch: ' + name)
     ledger.require(ledger.digest(entries['NOTICE.md']) == inputs.get('NOTICE.md'), 'ZIP NOTICE input mismatch')
+    if 'README.txt' in hashes:
+        ledger.require(ledger.digest(entries['README.txt']) == hashes['README.txt'], 'ZIP README hash mismatch')
+        ledger.require(isinstance(descriptor.get('readmeTemplate'), str), 'Missing version-neutral README template')
+        template = descriptor['readmeTemplate'].encode('utf-8')
+    else:
+        # Legacy candidates need the retained historical template, never today's code.
+        ledger.require('readmeTemplate' not in descriptor and readme_template is not None,
+                       'Legacy release requires historical README template')
+        template = readme_template.replace(b'\r\n', b'\n')
+    ledger.require(ledger.digest(template) == inputs.get('package/README.txt'), 'Historical README template hash mismatch')
+    rendered = template.decode('utf-8').replace('{version}', version).replace('{count}', f'{len(historic):,}').encode('utf-8-sig')
+    ledger.require(entries['README.txt'] == rendered, 'ZIP README template mismatch')
 
     # The archived Google TSV preserves the actual master order at release time.
     # Order alone is deliberately absent from ledger events, so do not use today's order.

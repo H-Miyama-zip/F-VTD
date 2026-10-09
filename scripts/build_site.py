@@ -63,10 +63,14 @@ def prepare_release(root=ROOT):
     descriptor = dict(version=version, count=len(rows), updatedOn=latest, appliedThrough=max(dates) if dates else None,
                       dateMeaning=date_meaning,
                       updateIds=[u['id'] for u in updates], changeIds=[c['id'] for u in updates for c in u['changes']],
-                      hashes=hashes, inputs=inputs)
-    release_bytes = ledger.canonical(descriptor) + b'\n'
+                      hashes=hashes, inputs=inputs,
+                      readmeTemplate=source_bytes(root / 'package/README.txt').decode('utf-8'))
     readme = source_bytes(root / 'package/README.txt').decode('utf-8').replace('{version}', version).replace('{count}', f'{len(rows):,}')
-    entries = dict(outputs, **{'README.txt': readme.encode('utf-8-sig'),
+    readme_bytes = readme.encode('utf-8-sig')
+    # Hash the rendered README only after computing the version; never feed it into inputs.
+    descriptor['hashes'] = dict(hashes, **{'README.txt': ledger.digest(readme_bytes)})
+    release_bytes = ledger.canonical(descriptor) + b'\n'
+    entries = dict(outputs, **{'README.txt': readme_bytes,
                                'NOTICE.md': source_bytes(root / 'NOTICE.md'), 'release.json': release_bytes})
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
@@ -90,7 +94,15 @@ def prepare_release(root=ROOT):
         ledger.require(record['change_ids'] == expected, 'Publication change IDs mismatch')
     current = next((r for r in published if r['version'] == version), None)
     if current:
-        ledger.require(current['release_sha256'] == ledger.digest(release_bytes) and current['zip_sha256'] == ledger.digest(zip_bytes), 'Publication does not match generated release')
+        archived_release, archived_zip = publications.release_archive.read(root, current)
+        ledger.require(json.loads(archived_release) == descriptor, 'Publication does not match generated release')
+        # Equivalent ZIP packaging / JSON whitespace is accepted at confirmation.
+        # Serve its exact confirmed bytes forever for this edition, even if recompression differs.
+        with zipfile.ZipFile(io.BytesIO(archived_zip)) as archive:
+            ledger.require(all(archive.read(f'F-VTD-{version}/{n}') == v
+                               for n, v in entries.items() if n != 'release.json'),
+                           'Publication members do not match generated release')
+        release_bytes, zip_bytes = archived_release, archived_zip
         ledger.require(current['update_ids'] == descriptor['updateIds'] and current['change_ids'] == descriptor['changeIds'], 'Publication IDs mismatch')
     changes = read_changes(updates, known)
     for history_update in changes:
@@ -100,13 +112,26 @@ def prepare_release(root=ROOT):
         for group in ('added', 'corrected', 'removed', 'undone', 'annotations'):
             for change in history_update[group]:
                 change['publishedIn'] = [r['version'] for r in published if change['id'] in r['change_ids']]
+    legacy_changes = []
+    for change in changes:
+        special = sum(len(change[g]) for g in ('corrected', 'undone', 'annotations'))
+        title = change['title']
+        if special:
+            title += '（訂正・取消し・記録訂正の詳細はページを再読み込みしてください）'
+        if change['date'] is None:
+            # This summary's date is explicitly the known edition reference date.
+            title = '版の基準日（変更日不明・詳細はページを再読み込み）：' + title
+        legacy_changes.append(dict(date=change['date'] if change['date'] is not None else latest, title=title,
+                                   added=[dict(c['after']) for c in change['added']],
+                                   removed=[dict(c['before']) for c in change['removed']]))
     manifest = dict(version=version, updatedOn=latest, updatedAt=latest + 'T00:00:00+09:00',
                     dateMeaning=descriptor['dateMeaning'], count=len(rows),
                     data=f'../files/{version}/search.json', zip=f'../files/{version}/F-VTD-{version}.zip',
                     release=f'../files/{version}/release.json', updateIds=descriptor['updateIds'],
                     changeIds=descriptor['changeIds'], hashes=dict(hashes, zip=ledger.digest(zip_bytes)),
                     publicationStatus='confirmed' if current else 'unconfirmed',
-                    publishedAt=current['published_at'] if current else None, changes=changes)
+                    publishedAt=current['published_at'] if current else None,
+                    changes=legacy_changes, ledgerChanges=changes)
     return version, manifest, dict(outputs, **{'search.json': search, 'release.json': release_bytes,
                                               f'F-VTD-{version}.zip': zip_bytes})
 
@@ -126,6 +151,14 @@ def main(root=ROOT, output=None, check=False):
     backup = public.with_name(public.name + '.previous')
     try:
         shutil.copytree(root / 'site', staging, dirs_exist_ok=True)
+        # Reloading the new HTML must not reuse a still-fresh cached old client.
+        index = staging / 'index.html'
+        html = index.read_text(encoding='utf-8')
+        for asset in ('app.js', 'style.css'):
+            if (staging / asset).is_file():
+                html = html.replace('/' + asset + '"', '/' + asset + '?v=' +
+                                    ledger.digest((staging / asset).read_bytes())[:16] + '"')
+        index.write_text(html, encoding='utf-8', newline='\n')
         target = staging / 'files' / version
         target.mkdir(parents=True)
         for name, data in files.items():

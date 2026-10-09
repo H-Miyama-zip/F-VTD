@@ -210,6 +210,7 @@ def replay(baseline, updates, upstreams):
             if kind == 'annotate':
                 require(before is None and after is None and len(change['related_ids']) == 1, 'Annotation must target one record, not dictionary content')
                 target = known[change['related_ids'][0]]
+                require(change['upstream'] == target['upstream'], 'Annotation upstream must match target record')
                 require(target['kind'] != 'annotate', 'Annotate the original record')
                 require(change['metadata_before'] == {k: target[k] for k in META}, 'Annotation before metadata mismatch')
                 replacement = change['metadata_after']
@@ -231,6 +232,7 @@ def replay(baseline, updates, upstreams):
                     require(len(change['related_ids']) == 1, 'Undo must target one content change')
                     tid = change['related_ids'][0]
                     target = known[tid]
+                    require(change['upstream'] == target['upstream'], 'Undo upstream must match target record')
                     require(target['kind'] != 'annotate' and tid not in undone, 'Duplicate/invalid undo')
                     require(before == target['after'] and after == target['before'], 'Undo must be the exact inverse')
                     undone.add(tid)

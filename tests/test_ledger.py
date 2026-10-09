@@ -125,8 +125,8 @@ class Fixture(unittest.TestCase):
         v2, manifest, _ = self.build()
         self.assertNotEqual(v1, v2)
         self.assertEqual(manifest['updatedAt'], '2026-10-06T00:00:00+09:00')
-        self.assertEqual(manifest['changes'][0]['corrected'][0]['before'], self.a)
-        self.assertEqual(manifest['changes'][0]['corrected'][0]['after'], corrected)
+        self.assertEqual(manifest['ledgerChanges'][0]['corrected'][0]['before'], self.a)
+        self.assertEqual(manifest['ledgerChanges'][0]['corrected'][0]['after'], corrected)
 
     def test_delete_only_changes_date_version_and_history(self):
         v1, _, _ = self.build()
@@ -135,7 +135,7 @@ class Fixture(unittest.TestCase):
         v2, manifest, files = self.build()
         self.assertNotEqual(v1, v2)
         self.assertEqual(manifest['count'], 1)
-        self.assertEqual(manifest['changes'][0]['removed'][0]['before'], self.a)
+        self.assertEqual(manifest['ledgerChanges'][0]['removed'][0]['before'], self.a)
         self.assertNotIn(self.a['word'], files['search.json'].decode())
 
     def test_undo_add_correct_delete(self):
@@ -384,9 +384,9 @@ class Fixture(unittest.TestCase):
         self.assertEqual(files, files2)
         self.assertEqual(before['publicationStatus'], 'unconfirmed')
         self.assertEqual(after['publicationStatus'], 'confirmed')
-        self.assertEqual(before['changes'][0]['publishedIn'], [])
-        self.assertEqual(after['changes'][0]['publishedIn'], [version])
-        self.assertEqual(after['changes'][0]['removed'][0]['publishedIn'], [version])
+        self.assertEqual(before['ledgerChanges'][0]['publishedIn'], [])
+        self.assertEqual(after['ledgerChanges'][0]['publishedIn'], [version])
+        self.assertEqual(after['ledgerChanges'][0]['removed'][0]['publishedIn'], [version])
         with self.assertRaisesRegex(ValueError, 'Duplicate publication'):
             publications.append(record, self.root)
 
@@ -426,8 +426,8 @@ class Fixture(unittest.TestCase):
         v3, manifest, files3 = build_site.prepare_release(self.root)
         self.assertEqual((v2, files2), (v3, files3))
         self.assertEqual(manifest['publicationStatus'], 'unconfirmed')
-        self.assertEqual(manifest['changes'][0]['publishedIn'], [])
-        self.assertEqual(manifest['changes'][1]['publishedIn'], [v1])
+        self.assertEqual(manifest['ledgerChanges'][0]['publishedIn'], [])
+        self.assertEqual(manifest['ledgerChanges'][1]['publishedIn'], [v1])
         archive_before = self.tree(self.root / 'releases')
         build_site.main(self.root)
         self.assertEqual(archive_before, self.tree(self.root / 'releases'))
@@ -493,15 +493,20 @@ class Fixture(unittest.TestCase):
         descriptor = json.loads(files['release.json'])
         forged_rows = [dict(self.a, reading='べつのとうろく'), self.b]
         outputs = build.render(forged_rows)
+        readme_hash = descriptor['hashes']['README.txt']
         descriptor['hashes'] = {name: ledger.digest(value) for name, value in outputs.items()}
         descriptor['hashes']['search.json'] = ledger.digest(ledger.canonical([
             {'reading': r['reading'], 'word': r['word'], 'excluded': []} for r in forged_rows]))
         descriptor['inputs'].update(descriptor['hashes'])
+        descriptor['hashes']['README.txt'] = readme_hash
         forged_version = descriptor['updatedOn'].replace('-', '') + '-' + ledger.digest(ledger.canonical(descriptor['inputs']))[:16]
         descriptor['version'] = forged_version
+        rendered = descriptor['readmeTemplate'].replace('{version}', forged_version).replace('{count}', f'{descriptor["count"]:,}').encode('utf-8-sig')
+        descriptor['hashes']['README.txt'] = ledger.digest(rendered)
         release = ledger.canonical(descriptor) + b'\n'
         with zipfile.ZipFile(io.BytesIO(files[f'F-VTD-{version}.zip'])) as original:
             extras = {name: original.read(f'F-VTD-{version}/{name}') for name in ('README.txt', 'NOTICE.md')}
+        extras['README.txt'] = rendered
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w') as archive:
             for name, data in dict(outputs, **extras, **{'release.json': release}).items():
@@ -522,6 +527,131 @@ class Fixture(unittest.TestCase):
         descriptor['version'] = descriptor['updatedOn'].replace('-', '') + '-' + ledger.digest(ledger.canonical(descriptor['inputs']))[:16]
         with self.assertRaisesRegex(ValueError, 'finalized ledger prefix'):
             release_archive.validate_artifacts(self.root, ledger.canonical(descriptor), files[f'F-VTD-{version}.zip'])
+
+    def repack(self, version, files, *, readme=None, release=None):
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(files[f'F-VTD-{version}.zip'])) as original:
+            with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_STORED) as archive:
+                for name in reversed(original.namelist()):
+                    content = original.read(name)
+                    if name.endswith('/README.txt') and readme is not None:
+                        content = readme
+                    if name.endswith('/release.json') and release is not None:
+                        content = release
+                    archive.writestr(name, content)
+        return buffer.getvalue()
+
+    def test_readme_only_tamper_is_rejected_before_any_confirmation_write(self):
+        version, _, files = self.build()
+        broken = self.repack(version, files, readme=b'wrong release instructions')
+        record = publication_record(version, files)
+        record['zip_sha256'] = ledger.digest(broken)
+        before = self.tree(self.root)
+        with self.assertRaisesRegex(ValueError, 'README hash mismatch'):
+            publications.append(record, self.root, release_bytes=files['release.json'], zip_bytes=broken)
+        self.assertEqual(before, self.tree(self.root))
+
+    def test_readme_and_descriptor_hash_tamper_cannot_reuse_version(self):
+        version, _, files = self.build()
+        descriptor = json.loads(files['release.json'])
+        descriptor['hashes']['README.txt'] = ledger.digest(b'wrong')
+        release = ledger.canonical(descriptor) + b'\n'
+        broken = self.repack(version, files, readme=b'wrong', release=release)
+        with self.assertRaisesRegex(ValueError, 'README template mismatch'):
+            release_archive.validate_artifacts(self.root, release, broken)
+        descriptor['readmeTemplate'] = 'wrong'
+        release = ledger.canonical(descriptor) + b'\n'
+        broken = self.repack(version, files, readme=b'wrong', release=release)
+        with self.assertRaisesRegex(ValueError, 'template hash mismatch'):
+            release_archive.validate_artifacts(self.root, release, broken)
+
+    def test_equivalent_recompression_and_json_whitespace_keep_confirmed_bytes(self):
+        version, _, files = self.build()
+        release = json.dumps(json.loads(files['release.json']), indent=2).encode()
+        repacked = self.repack(version, files, release=release)
+        self.assertNotEqual(repacked, files[f'F-VTD-{version}.zip'])
+        candidate = dict(files, **{'release.json': release, f'F-VTD-{version}.zip': repacked})
+        publications.append(publication_record(version, candidate), self.root,
+                            release_bytes=release, zip_bytes=repacked)
+        after_version, after_manifest, after_files = build_site.prepare_release(self.root)
+        self.assertEqual(after_version, version)
+        self.assertEqual(after_manifest['publicationStatus'], 'confirmed')
+        self.assertEqual(after_files['release.json'], release)
+        self.assertEqual(after_files[f'F-VTD-{version}.zip'], repacked)
+        self.assertEqual(after_manifest['hashes']['zip'], ledger.digest(repacked))
+
+    def test_legacy_readme_requires_retained_template_after_generators_move_on(self):
+        version, _, files = self.build()
+        template = (self.root / 'package/README.txt').read_bytes()
+        descriptor = json.loads(files['release.json'])
+        del descriptor['hashes']['README.txt']
+        del descriptor['readmeTemplate']
+        release = ledger.canonical(descriptor) + b'\n'
+        original = self.repack(version, files, release=release)
+        (self.root / 'package/README.txt').write_bytes(b'next template {version}')
+        (self.root / 'scripts/build.py').write_bytes(b'next generator')
+        with patch.object(build_site.sys, 'version_info', (99, 1, 2)), patch.object(build_site, 'prepare_release', side_effect=AssertionError('No current rebuild allowed')):
+            release_archive.validate_artifacts(self.root, release, original, readme_template=template)
+        self.write_master([self.a])  # draft is intentionally ahead of finalized history
+        with self.assertRaisesRegex(ValueError, 'requires historical README template'):
+            release_archive.validate_artifacts(self.root, release, original)
+        with self.assertRaisesRegex(ValueError, 'template hash mismatch'):
+            release_archive.validate_artifacts(self.root, release, original, readme_template=b'wrong')
+        bad = self.repack(version, files, release=release, readme=b'wrong')
+        with self.assertRaisesRegex(ValueError, 'README template mismatch'):
+            release_archive.validate_artifacts(self.root, release, bad, readme_template=template)
+        candidate = dict(files, **{'release.json': release, f'F-VTD-{version}.zip': original})
+        publications.append(publication_record(version, candidate), self.root,
+                            release_bytes=release, zip_bytes=original, readme_template=template)
+        self.assertEqual(release_archive.read(self.root, publications.load(self.root)[0]), (release, original))
+
+    def test_reloaded_html_uses_new_asset_cache_keys(self):
+        import shutil
+        import re
+        shutil.copytree(ROOT / 'site', self.root / 'site', dirs_exist_ok=True)
+        self.build()
+        build_site.main(self.root)
+        first = (self.root / 'public/index.html').read_text(encoding='utf-8')
+        for name in ('app.js', 'style.css'):
+            self.assertIn('/' + name + '?v=' + ledger.digest((self.root / 'site' / name).read_bytes())[:16], first)
+        app = self.root / 'site/app.js'
+        app.write_bytes(app.read_bytes() + b'\n// fixture next client revision\n')
+        build_site.main(self.root)
+        second = (self.root / 'public/index.html').read_text(encoding='utf-8')
+        self.assertNotEqual(re.search(r'/app.js\?v=[0-9a-f]+', first).group(),
+                            re.search(r'/app.js\?v=[0-9a-f]+', second).group())
+
+    def test_rendered_readme_hash_is_outside_version_inputs(self):
+        version, _, files = self.build()
+        descriptor = json.loads(files['release.json'])
+        self.assertNotIn('README.txt', descriptor['inputs'])
+        self.assertEqual(version, descriptor['updatedOn'].replace('-', '') + '-' +
+                         ledger.digest(ledger.canonical(descriptor['inputs']))[:16])
+        with zipfile.ZipFile(io.BytesIO(files[f'F-VTD-{version}.zip'])) as archive:
+            self.assertEqual(descriptor['hashes']['README.txt'],
+                             ledger.digest(archive.read(f'F-VTD-{version}/README.txt')))
+
+    def test_legacy_manifest_does_not_mislabel_special_events(self):
+        added = row('しんき', '架空追加', 'added')
+        corrected = dict(self.a, source_url='https://example.test/corrected')
+        fix = self.change('fix', 'correct', self.a, corrected)
+        annotation = self.change('annotation', 'annotate', None, None)
+        annotation['related_ids'] = ['fix']
+        annotation['metadata_before'] = {k: fix[k] for k in ledger.META}
+        annotation['metadata_after'] = dict({k: fix[k] for k in ledger.META}, reason='架空の記録訂正')
+        undo = self.change('undo', 'undo', corrected, self.a)
+        undo['related_ids'] = ['fix']
+        self.update([self.change('add', 'add', None, added), fix,
+                     self.change('delete', 'delete', self.b, None), annotation, undo])
+        self.write_master([self.a, added])
+        _, manifest, _ = self.build()
+        old, new = manifest['changes'][0], manifest['ledgerChanges'][0]
+        self.assertEqual(old['added'], [added])
+        self.assertEqual(old['removed'], [self.b])
+        self.assertIn('再読み込み', old['title'])
+        for group in ('added', 'corrected', 'removed', 'undone', 'annotations'):
+            self.assertEqual(len(new[group]), 1)
+
 
     def test_upstream_audit_conditions_no_reapply_or_identity_guessing(self):
         corrected = dict(self.a, reading='しゅうせい')
@@ -651,9 +781,78 @@ class Fixture(unittest.TestCase):
             current = after
         self.write_master([current, self.b])
         _, manifest, _ = self.build()
-        self.assertEqual([c['id'] for c in manifest['changes']], list(reversed(ids)))
-        self.assertEqual(manifest['changes'][0]['corrected'][0]['after'], current)
-        self.assertIn('a-latest', [c['id'] for c in manifest['changes'][:5]])
+        self.assertEqual([c['id'] for c in manifest['ledgerChanges']], list(reversed(ids)))
+        self.assertEqual(manifest['ledgerChanges'][0]['corrected'][0]['after'], current)
+        self.assertIn('a-latest', [c['id'] for c in manifest['ledgerChanges'][:5]])
+
+    def check_target_upstream_inheritance(self, kind):
+        self.upstreams['next'] = dict(version='next-fixture', files={'next.tsv': 'e' * 64})
+        (self.root / 'data/upstreams.json').write_bytes(ledger.canonical(self.upstreams))
+        corrected = dict(self.a, reading='ていせい')
+        original = self.change('original', 'correct', self.a, corrected)
+        self.update([original])
+        self.write_master([corrected, self.b])
+        self.build()
+        build_site.main(self.root)
+
+        if kind == 'undo':
+            change = self.change('follow-up', kind, corrected, self.a)
+            final_rows = self.baseline
+        else:
+            change = self.change('follow-up', kind, None, None)
+            change['metadata_before'] = {k: original[k] for k in ledger.META}
+            change['metadata_after'] = dict(change['metadata_before'], reason='corrected fixture evidence')
+            final_rows = [corrected, self.b]
+        change['related_ids'] = [original['id']]
+        change['upstream'] = 'next'  # Registered, but different from the target's original edition.
+        value = dict(id='follow-up-update', scope='applied', status='draft', title='fixture follow-up',
+                     applied_on='2026-10-06', restoration=None, changes=[change])
+        draft = self.root / 'follow-up.json'
+        draft.write_bytes(ledger.canonical(value))
+        self.write_master(final_rows)
+        before = self.tree(self.root)
+        command = [sys.executable, '-B', str(ROOT / 'scripts/ledger.py'), '--root', str(self.root),
+                   'confirm', str(draft)]
+        refused = subprocess.run(command, capture_output=True)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn(b'upstream must match target record', refused.stderr)
+        self.assertEqual(before, self.tree(self.root))
+        with self.assertRaisesRegex(ValueError, 'upstream must match target record'):
+            ledger.append_draft(draft, self.root)
+        self.assertEqual(before, self.tree(self.root))
+
+        # A forged finalized record must also be refused by the shared generation path.
+        ledger_path = self.root / 'data/ledger.jsonl'
+        saved = ledger_path.read_bytes()
+        finalized = ledger.seal(dict(value, status='final'), self.updates[-1]['hash'])
+        ledger_path.write_bytes(saved + ledger.canonical(finalized) + b'\n')
+        before_generated = self.tree(self.root)
+        try:
+            for action in (lambda: build.main(self.root), lambda: build_site.main(self.root)):
+                with self.assertRaisesRegex(ValueError, 'upstream must match target record'):
+                    action()
+            self.assertEqual(before_generated, self.tree(self.root))
+        finally:
+            ledger_path.write_bytes(saved)
+
+        # The legitimate same-edition operation remains confirmable with multiple editions registered.
+        change['upstream'] = original['upstream']
+        draft.write_bytes(ledger.canonical(value))
+        accepted = subprocess.run(command, capture_output=True)
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        rows, _, known, _ = ledger.load(self.root)
+        self.assertEqual({ledger.key(r): r for r in rows}, {ledger.key(r): r for r in final_rows})
+        self.assertEqual(known['follow-up']['upstream'], original['upstream'])
+        _, manifest, _ = self.build()
+        bucket = 'undone' if kind == 'undo' else 'annotations'
+        self.assertEqual(manifest['ledgerChanges'][0][bucket][0]['id'], change['id'])
+
+    def test_undo_requires_target_upstream_at_confirmation_and_generation(self):
+        self.check_target_upstream_inheritance('undo')
+
+    def test_annotation_requires_target_upstream_at_confirmation_and_generation(self):
+        self.check_target_upstream_inheritance('annotate')
+
 
     def test_cli_requires_upstream_selection_after_catalog_grows(self):
         self.upstreams['next'] = dict(version='next-fixture', files={'next.tsv': 'e'*64})

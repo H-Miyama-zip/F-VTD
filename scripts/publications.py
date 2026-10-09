@@ -37,7 +37,7 @@ def load(root=ROOT):
     return validate(ledger.jsonl(Path(root) / 'data/publications.jsonl'))
 
 
-def append(record, root=ROOT, *, release_bytes=None, zip_bytes=None):
+def append(record, root=ROOT, *, release_bytes=None, zip_bytes=None, readme_template=None):
     root = Path(root)
     _, updates, _, _ = ledger.load(root, match_master=False)
     ledger.require(set(record['update_ids']) <= {u['id'] for u in updates}, 'Unknown published update IDs')
@@ -47,7 +47,7 @@ def append(record, root=ROOT, *, release_bytes=None, zip_bytes=None):
     records = validate(existing + [record])
     release_archive.verify(root, existing)
     ledger.require(release_bytes is not None and zip_bytes is not None, 'Publication confirmation requires exact release/ZIP artifacts')
-    descriptor = release_archive.validate_artifacts(root, release_bytes, zip_bytes)
+    descriptor = release_archive.validate_artifacts(root, release_bytes, zip_bytes, readme_template=readme_template)
     ledger.require(record['version'] == descriptor['version'] and record['update_ids'] == descriptor['updateIds'] and
                    record['change_ids'] == descriptor['changeIds'], 'Publication artifact IDs mismatch')
     ledger.require(record['release_sha256'] == ledger.digest(release_bytes) and
@@ -67,6 +67,7 @@ def main():
     parser.add_argument('--root', type=Path, default=ROOT)
     parser.add_argument('--release', type=Path, required=True, help='Generated release.json actually published')
     parser.add_argument('--zip', type=Path, required=True)
+    parser.add_argument('--readme-template', type=Path, help='Retained historical template, required for legacy descriptors without rendered README hash')
     parser.add_argument('--id', required=True)
     parser.add_argument('--published-at', required=True)
     parser.add_argument('--url', required=True)
@@ -78,7 +79,8 @@ def main():
     record = dict(id=args.id, version=version, published_at=args.published_at, url=args.url,
                   evidence=args.evidence, update_ids=release['updateIds'], change_ids=release['changeIds'],
                   release_sha256=ledger.digest(release_bytes), zip_sha256=ledger.digest(zip_bytes))
-    append(record, args.root, release_bytes=release_bytes, zip_bytes=zip_bytes)
+    append(record, args.root, release_bytes=release_bytes, zip_bytes=zip_bytes,
+           readme_template=args.readme_template.read_bytes() if args.readme_template else None)
     print('Recorded separate publication confirmation and preserved:', version)
 
 
