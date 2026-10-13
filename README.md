@@ -14,7 +14,9 @@ VTuber変換辞書 ver1_2（とぷんろぷ氏、2026-09-03）を基にした非
 
 追加・訂正・削除の記録と確認元は [data/ledger.jsonl](data/ledger.jsonl)、更新・検査の手順は [docs/LEDGER.md](docs/LEDGER.md) を参照してください。現在の有効な登録は `data/master.tsv` です。
 
-最新mainの変更台帳方式を取り込み、main未反映の173変換を台帳へ記録しました。既存の変更履歴と辞書の内容・元の追加日を保持し、旧 `data/additions.tsv` は変更台帳へ統合しています。
+変更台帳方式へ統合し、追加候補からの173変換を台帳へ記録しました。既存の変更履歴と辞書の内容・元の追加日を保持し、旧 `data/additions.tsv` は変更台帳へ統合しています。
+
+2026-10-14：作業ブランチをmainへ反映し、Cloudflareの自動公開を確認しました。公開版は `20261013-273ea18bcb504452`（20,223語）です。公開先の配布4形式・検索データ・ZIP・release.jsonを照合し、公開確認記録と実配布物を保存しました。詳細は [公開確認記録](data/publications.jsonl) と [検証報告](docs/IMPLEMENTATION_REPORT.md) を参照してください。
 
 ## ダウンロード・導入
 
