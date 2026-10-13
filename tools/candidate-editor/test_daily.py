@@ -68,7 +68,7 @@ class DailyTests(unittest.TestCase):
             shutil.copytree(editor.ROOT / name, self.root / name, ignore=shutil.ignore_patterns('__pycache__'))
         shutil.copyfile(editor.ROOT / 'NOTICE.md', self.root / 'NOTICE.md')
         # Fixtures are inside the live checkout; never inherit its Git seals.
-        ceiling = patch.dict(os.environ, {'GIT_CEILING_DIRECTORIES': str(self.root.resolve())})
+        ceiling = patch.dict(os.environ, {'GIT_CEILING_DIRECTORIES': str(self.root.parent.resolve())})
         ceiling.start()
         self.addCleanup(ceiling.stop)
         ledger = daily.ledger_module(self.root)
