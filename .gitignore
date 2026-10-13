@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 public/
+outputs/
+.artifact_runtime/
+node_modules/
