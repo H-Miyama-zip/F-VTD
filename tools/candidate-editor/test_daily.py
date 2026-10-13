@@ -1,5 +1,6 @@
 """Daily workflow tests use disposable dictionaries and DBs only."""
 import copy
+import os
 import json
 import shutil
 import tempfile
@@ -66,6 +67,23 @@ class DailyTests(unittest.TestCase):
         for name in ('scripts', 'site', 'package'):
             shutil.copytree(editor.ROOT / name, self.root / name, ignore=shutil.ignore_patterns('__pycache__'))
         shutil.copyfile(editor.ROOT / 'NOTICE.md', self.root / 'NOTICE.md')
+        # Fixtures are inside the live checkout; never inherit its Git seals.
+        ceiling = patch.dict(os.environ, {'GIT_CEILING_DIRECTORIES': str(self.root.resolve())})
+        ceiling.start()
+        self.addCleanup(ceiling.stop)
+        ledger = daily.ledger_module(self.root)
+        baseline_dir = self.root / 'data/baseline'
+        baseline_dir.mkdir()
+        content = (self.root / 'data/master.tsv').read_bytes()
+        (baseline_dir / 'master.tsv').write_bytes(content)
+        upstream = {'fixture': {'version': 'fixture', 'files': {'fixture.tsv': 'f' * 64}}}
+        info = dict(count=1, sha256=ledger.digest(content), upstream='fixture', upstream_date='2026-09-03',
+                    upstream_sha256=ledger.digest(ledger.canonical(upstream['fixture'])),
+                    reconstructed_updates=0, reconstructed_head=None)
+        (baseline_dir / 'info.json').write_bytes(ledger.canonical(info))
+        (self.root / 'data/upstreams.json').write_bytes(ledger.canonical(upstream))
+        (self.root / 'data/ledger.jsonl').write_bytes(b'')
+        (self.root / 'data/publications.jsonl').write_bytes(b'')
 
     def edit(self, edits):
         target = self.book.with_name('edited.xlsx')
@@ -97,7 +115,12 @@ class DailyTests(unittest.TestCase):
             self.assertIn(plan['additions'][0]['reading'] + '\t' + plan['additions'][0]['word'] + '\t人名', rows)
         manifest = editor.read_json(self.root / 'public/data/latest.json')
         self.assertEqual(manifest['count'], 2)
-        self.assertEqual(len(editor.tsv_rows((self.root / 'data/additions.tsv').read_bytes())), 1)
+        replayed, updates, _, _ = daily.ledger_module(self.root).load(self.root)
+        self.assertEqual(replayed, master_after)
+        self.assertEqual(len(updates), 1)
+        self.assertEqual(updates[0]['changes'][0]['after'], plan['additions'][0])
+        self.assertFalse((self.root / 'data/additions.tsv').exists())
+        self.assertEqual((self.root / 'data/publications.jsonl').read_bytes(), b'')
         backup = Path(result['backup'])
         backup_info = editor.read_json(backup / 'manifest.json')
         master_backup = next(r for r in backup_info['files'] if r['target'] == str(self.root / 'data/master.tsv'))
@@ -136,6 +159,29 @@ class DailyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '変更'):
             daily.apply(self.db, self.root, self.batch / '辞書反映計画.json')
 
+    def test_changed_ledger_blocks_apply(self):
+        self.edit({'C6': '採用'})
+        self.preview()
+        master_before = (self.root / 'data/master.tsv').read_bytes()
+        ledger = self.root / 'data/ledger.jsonl'
+        ledger.write_bytes(ledger.read_bytes() + b'\n')
+        with self.assertRaisesRegex(ValueError, '変更'):
+            daily.apply(self.db, self.root, self.batch / '辞書反映計画.json')
+        self.assertEqual((self.root / 'data/master.tsv').read_bytes(), master_before)
+
+    def test_unrecorded_dictionary_change_is_not_absorbed_into_daily_update(self):
+        master = self.root / 'data/master.tsv'
+        rows = daily.master_rows(self.root)
+        rows[0]['word'] = '台帳に未記録の編集'
+        master.write_bytes(editor.tsv_bytes(rows, daily.MASTER_COLUMNS))
+        self.edit({'C6': '採用'})
+        self.preview()
+        before = master.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'master'):
+            daily.apply(self.db, self.root, self.batch / '辞書反映計画.json')
+        self.assertEqual(master.read_bytes(), before)
+        self.assertEqual((self.root / 'data/ledger.jsonl').read_bytes(), b'')
+
     def test_changed_candidate_blocks_preview(self):
         self.edit({'C6': '採用'})
         record = self.info['records'][0]
@@ -173,6 +219,7 @@ class DailyTests(unittest.TestCase):
         master = self.root / 'data/master.tsv'
         before = master.read_bytes()
         state_before = (self.db / 'candidate_editor_state.json').read_bytes()
+        ledger_before = (self.root / 'data/ledger.jsonl').read_bytes()
         with patch.object(daily, 'build_staged', side_effect=ValueError('test build failure')):
             with self.assertRaisesRegex(ValueError, 'test build failure'):
                 daily.apply(self.db, self.root, self.batch / '辞書反映計画.json')
@@ -189,6 +236,7 @@ class DailyTests(unittest.TestCase):
                 daily.apply(self.db, self.root, self.batch / '辞書反映計画.json')
         self.assertEqual(master.read_bytes(), before)
         self.assertEqual((self.db / 'candidate_editor_state.json').read_bytes(), state_before)
+        self.assertEqual((self.root / 'data/ledger.jsonl').read_bytes(), ledger_before)
         self.assertFalse((self.batch / '完了.json').exists())
         self.assertFalse((self.db / '.candidate-editor.lock').exists())
 

@@ -1,53 +1,77 @@
-"""Build IME dictionaries and the additions record from the UTF-8 master (Python standard library only)."""
-import csv
-import datetime
+"""Validate the ledger, then build four current dictionaries (standard library)."""
+import argparse
 import plistlib
 from pathlib import Path
+import ledger
 
 ROOT = Path(__file__).resolve().parents[1]
+FORMATS = [('Google日本語入力', 'google_pos'), ('MicrosoftIME', 'microsoft_pos'), ('ATOK', 'atok_pos')]
+DIST_FILES = [f'VTuber変換辞書_{name}.tsv' for name, _ in FORMATS] + ['VTuber変換辞書_macOS.plist']
 
 
-def main():
-    with (ROOT / 'data/master.tsv').open(encoding='utf-8', newline='') as f:
-        rows = list(csv.DictReader(f, delimiter='\t'))
-    seen = set()
-    for number, row in enumerate(rows, 2):
-        for key in ('reading', 'word', 'google_pos', 'microsoft_pos', 'atok_pos'):
-            value = row[key]
-            if not value or value != value.strip() or any(c in value for c in '\t\r\n'):
-                raise ValueError(f'Invalid {key} at line {number}')
-        pair = (row['reading'], row['word'])
-        if pair in seen:
-            raise ValueError(f'Duplicate pair at line {number}: {pair}')
-        seen.add(pair)
-        if row['origin'] == 'added':
-            datetime.date.fromisoformat(row['added_on'])
-            if not row['source_url'].startswith(('https://', 'http://')):
-                raise ValueError(f'Added row without source_url at line {number}')
-        elif row['origin'] != 'upstream' or row['added_on']:
-            raise ValueError(f'Invalid origin/added_on at line {number}')
-    out = ROOT / 'dist'
-    out.mkdir(exist_ok=True)
-    for name, pos in [('Google日本語入力', 'google_pos'), ('MicrosoftIME', 'microsoft_pos'), ('ATOK', 'atok_pos')]:
+def render(rows):
+    outputs = {}
+    for name, pos in FORMATS:
         lines = []
         if name == 'MicrosoftIME':
-            lines = ['!Microsoft IME Dictionary Tool', '!Format:WORDLIST', '!F-VTD VTuber変換辞書', '!利用条件・変更内容はリポジトリのREADME.mdとNOTICE.mdを参照']
+            lines = ['!Microsoft IME Dictionary Tool', '!Format:WORDLIST', '!F-VTD VTuber変換辞書',
+                     '!利用条件・変更内容はリポジトリのREADME.mdとNOTICE.mdを参照']
         lines += ['\t'.join((r['reading'], r['word'], r[pos])) for r in rows]
-        (out / f'VTuber変換辞書_{name}.tsv').write_bytes(('\r\n'.join(lines) + '\r\n').encode('utf-16'))
-    data = [{'phrase': r['word'], 'shortcut': r['reading']} for r in rows]
-    (out / 'VTuber変換辞書_macOS.plist').write_bytes(plistlib.dumps(data, sort_keys=False))
-    # Read back every output to check encoding, fields and cross-format parity.
-    for name, pos in [('Google日本語入力', 'google_pos'), ('MicrosoftIME', 'microsoft_pos'), ('ATOK', 'atok_pos')]:
-        actual = [line.split('\t') for line in (out / f'VTuber変換辞書_{name}.tsv').read_text(encoding='utf-16').splitlines() if not line.startswith('!')]
-        assert actual == [[r['reading'], r['word'], r[pos]] for r in rows]
-    assert plistlib.loads((out / 'VTuber変換辞書_macOS.plist').read_bytes()) == data
-    # data/additions.tsv is a generated, human-readable record of what F-VTD added to the upstream data.
-    columns = ['added_on', 'reading', 'word', 'source_url', 'note']
-    added = sorted((r for r in rows if r['origin'] == 'added'), key=lambda r: r['added_on'])
-    lines = ['\t'.join(columns)] + ['\t'.join(r[c] for c in columns) for r in added]
-    (ROOT / 'data/additions.tsv').write_bytes(('\n'.join(lines) + '\n').encode('utf-8'))
-    print(f'Validated and generated {len(rows)} entries in 4 formats ({len(added)} added).')
+        outputs[f'VTuber変換辞書_{name}.tsv'] = b'\xff\xfe' + ('\r\n'.join(lines) + '\r\n').encode('utf-16le')
+    outputs['VTuber変換辞書_macOS.plist'] = plistlib.dumps(
+        [{'phrase': r['word'], 'shortcut': r['reading']} for r in rows], sort_keys=False)
+    validate_outputs(rows, outputs)
+    return outputs
+
+
+def validate_outputs(rows, outputs):
+    for name, pos in FORMATS:
+        value = outputs[f'VTuber変換辞書_{name}.tsv']
+        ledger.require(value.startswith(b'\xff\xfe'), 'Missing UTF-16LE BOM')
+        text = value[2:].decode('utf-16le')
+        ledger.require(text.endswith('\r\n') and '\n' not in text.replace('\r\n', ''), 'Invalid TSV newlines')
+        actual = [line.split('\t') for line in text.splitlines() if not line.startswith('!')]
+        ledger.require(actual == [[r['reading'], r['word'], r[pos]] for r in rows], 'TSV parity mismatch')
+    ledger.require(plistlib.loads(outputs['VTuber変換辞書_macOS.plist']) ==
+                   [{'phrase': r['word'], 'shortcut': r['reading']} for r in rows], 'Plist parity mismatch')
+
+
+def prepare(root=ROOT):
+    rows, _, _, _ = ledger.load(root)
+    return rows, render(rows)
+
+
+def check_dist(root, outputs):
+    stale = [name for name, value in outputs.items()
+             if not (root / 'dist' / name).exists() or (root / 'dist' / name).read_bytes() != value]
+    ledger.require(not stale, 'Stale dist; run python scripts/build.py: ' + ', '.join(stale))
+
+
+def main(root=ROOT, check=False):
+    root = Path(root)
+    rows, outputs = prepare(root)
+    if check:
+        check_dist(root, outputs)
+    else:
+        out = root / 'dist'
+        out.mkdir(exist_ok=True)
+        temporary = []
+        try:
+            for name, value in outputs.items():
+                path = out / (name + '.tmp')
+                path.write_bytes(value)
+                temporary.append((path, out / name))
+            for path, target in temporary:
+                path.replace(target)
+        finally:
+            for path, _ in temporary:
+                path.unlink(missing_ok=True)
+    print(f'Validated {len(rows)} entries in four formats; ' + ('read-only check.' if check else 'generated dist.'))
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--root', type=Path, default=ROOT)
+    parser.add_argument('--check', action='store_true', help='Read-only validation of tracked outputs')
+    args = parser.parse_args()
+    main(args.root, args.check)

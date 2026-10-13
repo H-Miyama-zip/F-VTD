@@ -137,7 +137,7 @@ class AppTests(test_daily.DailyTests):
         self.assertTrue(all(r['name'] != result['state']['records'][0]['name'] for r in next_state['records']))
 
     def test_candidate_save_never_writes_dictionary_distribution_or_site(self):
-        for name in ('data/additions.tsv', 'dist/dictionary.tsv', 'public/data/latest.json', 'README.md'):
+        for name in ('data/ledger.jsonl', 'dist/dictionary.tsv', 'public/data/latest.json', 'README.md'):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b'keep this exact content\n')

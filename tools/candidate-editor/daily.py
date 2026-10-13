@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import importlib.util
 import json
 import os
 import re
@@ -237,9 +238,20 @@ def validate_registration(form):
 
 
 def source_hashes(root):
-    paths = [root / 'scripts/build.py', root / 'scripts/build_site.py',
-             root / 'package/README.txt', root / 'NOTICE.md', *sorted((root / 'site').rglob('*'))]
+    paths = [*sorted((root / 'scripts').glob('*.py')),
+             root / 'package/README.txt', root / 'NOTICE.md', *sorted((root / 'site').rglob('*')),
+             *sorted((root / 'data/baseline').rglob('*')),
+             *(root / 'data' / name for name in ('ledger.jsonl', 'upstreams.json', 'publications.jsonl')),
+             *sorted((root / 'releases').rglob('*'))]
     return {str(p.relative_to(root)): editor.file_hash(p) for p in paths if p.is_file()}
+
+
+def ledger_module(root):
+    """Use the target project's ledger validator, including its fixed baseline."""
+    spec = importlib.util.spec_from_file_location('candidate_dictionary_ledger', root / 'scripts/ledger.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def calculate_plan(db, root, book, *, target='dictionary'):
@@ -345,19 +357,38 @@ def preview_candidates(db, root, book):
     return plan
 
 
-def build_staged(root, additions, stage):
+def build_staged(root, additions, stage, *, update_id, applied_on):
+    ledger = ledger_module(root)
+    _, _, _, info = ledger.load(root)
     for name in ('scripts', 'package', 'site'):
         shutil.copytree(root / name, stage / name, ignore=shutil.ignore_patterns('__pycache__'))
     shutil.copyfile(root / 'NOTICE.md', stage / 'NOTICE.md')
     (stage / 'data').mkdir()
+    shutil.copytree(root / 'data/baseline', stage / 'data/baseline')
+    for name in ('ledger.jsonl', 'upstreams.json', 'publications.jsonl'):
+        shutil.copyfile(root / 'data' / name, stage / 'data' / name)
+    if (root / 'releases').exists():
+        shutil.copytree(root / 'releases', stage / 'releases')
     columns = list(master_rows(root)[0])
     (stage / 'data/master.tsv').write_bytes(editor.tsv_bytes(master_rows(root) + additions, columns))
+    changes = []
+    for i, row in enumerate(additions, 1):
+        change = ledger.new_change(f'{update_id}-{i:04}', 'add', None, row, info['upstream'],
+            '日次Excelで採用した未登録の変換を辞書へ追加する。', [row['source_url']])
+        change['evidence']['text'] = row['note'] or None
+        changes.append(change)
+    draft = dict(id=update_id, scope='applied', status='draft', title='日次Excelの追加候補を反映',
+                 applied_on=applied_on, restoration=None, changes=changes)
+    draft_path = stage / 'ledger-draft.json'
+    draft_path.write_bytes(ledger.canonical(draft) + b'\n')
+    ledger.append_draft(draft_path, stage)
     for script in ('build.py', 'build_site.py'):
         result = subprocess.run([sys.executable, str(stage / 'scripts' / script)],
             capture_output=True, text=True, encoding='utf-8', errors='replace')
         if result.returncode:
             raise ValueError('辞書・サイトの生成に失敗しました: ' + result.stdout + result.stderr)
-    return [p for name in ('data', 'dist', 'public') for p in sorted((stage / name).rglob('*')) if p.is_file()]
+    return [stage / 'data/master.tsv', stage / 'data/ledger.jsonl',
+            *[p for name in ('dist', 'public') for p in sorted((stage / name).rglob('*')) if p.is_file()]]
 
 
 def replace_bytes(path, data):
@@ -403,7 +434,8 @@ def _apply_review(db, root, plan_path, *, mode):
             stage.relative_to(book.parent.resolve())  # Bound recursive build/cleanup to this batch.
             outputs = {}
             if mode == 'dictionary' and plan['additions']:
-                for p in build_staged(root, plan['additions'], stage):
+                for p in build_staged(root, plan['additions'], stage,
+                                      update_id='daily-' + book.parent.name, applied_on=plan['date']):
                     outputs[root / p.relative_to(stage)] = p.read_bytes()
             state = editor.read_json(db / 'candidate_editor_state.json', {'version': 1, 'records': {}, 'new_origins': {}})
             history = editor.read_json(db / 'candidate_editor_history.json', [])

@@ -17,7 +17,7 @@
 
 原版READMEに挙げられている基盤データの作成者は、VRStudioLab氏、Umichang氏、ビターチョコ氏（@bitterchoco3739）です。原版とその作成に関わった方々に感謝します。
 
-本版で追加した名前と読みの追加日・確認元は、リポジトリ（<https://github.com/H-Miyama-zip/F-VTD>）の `data/additions.tsv` に記載しています。紹介文・画像・キャラクターデザインは収録していません。
+本版の追加・訂正・削除の変更履歴、既存の追加日と確認元は、リポジトリ（<https://github.com/H-Miyama-zip/F-VTD>）の `data/ledger.jsonl` に記載しています。復元記録の不明な確認日・適用日は推測で補っていません。紹介文・画像・キャラクターデザインは収録していません。
 
 本改変版は原作者や各権利者の公認を示すものではありません。候補の正確性や各IMEでの動作は保証されません。本版に関するご連絡は原作者の窓口へ送らず、F-VTDの公式X（[@FVTD_project](https://x.com/FVTD_project)）、収録依頼フォーム（<https://docs.google.com/forms/d/e/1FAIpQLSfPnkf9U3Ut1OrpjrpTryg-yYFmgK8Ct03w9phtO1GAHIQIGQ/viewform>）またはリポジトリのIssueでお知らせください。
 

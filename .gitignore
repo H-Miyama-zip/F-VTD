@@ -5,3 +5,7 @@ public/
 outputs/
 .artifact_runtime/
 node_modules/
+local-review/
+data/drafts/
+data/release-candidates/
+*.tmp
