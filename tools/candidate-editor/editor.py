@@ -1,5 +1,6 @@
 """Japanese Excel front end for the existing candidate tables.
 
+Edits save to the candidate DB; dictionary additions are a separate workflow.
 Standard-library XLSX reader, three-way field merge, reviewed plans and backups.
 Workbook authoring is delegated to build.mjs (@oai/artifact-tool).
 """

@@ -1,6 +1,7 @@
-"""A small daily review workbook and reviewed dictionary additions.
+"""Candidate DB saves and the separate legacy daily dictionary workflow.
 
-No network or Git operations. Builds run in a disposable project before applying.
+No network or Git operations. Candidate saves never build dictionary files.
+Legacy dictionary plans build in a disposable project before applying.
 """
 from __future__ import annotations
 

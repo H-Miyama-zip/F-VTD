@@ -14,10 +14,10 @@ const literal = value => typeof value === 'string' && value.startsWith('=') ? `'
 sheet.showGridLines = false;
 sheet.tabColor = '#243B53';
 sheet.getRange(`A1:H${end}`).format.font = font;
-sheet.getRange('A2').values = [['今日の候補']];
+sheet.getRange('A2').values = [['今日の候補（従来の辞書反映用）']];
 sheet.getRange('A2').format.font = {...font, size:16, bold:true};
 sheet.getRange('A2').format.rowHeight = 28;
-sheet.getRange('A3').values = [['黄色の収録判断と判断メモを編集し、保存して閉じます。根拠URLはクリックできます。']];
+sheet.getRange('A3').values = [['黄色の判断とメモを編集して保存。03の実行は辞書・配布ファイルを更新します。アプリの候補DB保存とは別です。']];
 sheet.getRange('A3').format.rowHeight = 24;
 sheet.getRange('A4').values = [[`候補 ${input.cells.length}語（1名につきフルネーム読み1語）`]];
 sheet.getRange('D4').formulas = [[`="採用 "&COUNTIFS(C6:C${end},"採用")&"語　保留 "&COUNTIFS(C6:C${end},"保留")&"語"`]];

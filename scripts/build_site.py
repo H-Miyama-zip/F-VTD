@@ -1,7 +1,7 @@
-"""Build the static website into public/ (Python standard library only).
+"""Build the static website from data/master.tsv into public/ (stdlib only).
 
-Cloudflare Pages runs this on every push: build command `python scripts/build_site.py`,
-output directory `public`.
+Candidate DB saves are separate and are not inputs to this build.
+The Cloudflare Workers build uses `python scripts/build_site.py` before deployment.
 """
 import csv
 import hashlib

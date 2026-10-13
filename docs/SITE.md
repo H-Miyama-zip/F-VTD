@@ -9,6 +9,7 @@ F-VTD の検索・ダウンロード用サイトは、このリポジトリか�
 | パス | 役割 |
 | --- | --- |
 | `site/` | 画面のファイル（HTML・CSS・JS）、`config.json`（GitHub・フォームへのリンク）、`_headers`（キャッシュ設定） |
+| `outputs/vtuberpost_private/` | ローカルの追加候補DB。アプリの保存先で、サイトのビルド元には含まれない。Git管理から除外する |
 | `data/master.tsv` の `added_on` 列 | サイトの「更新履歴」の元データ。追加した語の追加日 |
 | `package/README.txt` | ZIPに入れる利用者向けの案内。`{version}` と `{count}` はビルド時に埋め込む |
 | `scripts/build_site.py` | `dist/` を再生成・検査し、検索用データとZIPを作って `public/` にまとめる |
@@ -28,10 +29,16 @@ F-VTD の検索・ダウンロード用サイトは、このリポジトリか�
 
 ## 辞書を更新するとき
 
-1. `data/master.tsv` に行を追加する。`origin` は `added`、`added_on` に追加日（例：`2026-09-21`）、`source_url` に確認元URL、必要なら `note` に注記を書く。編集するのはこのファイルだけです。
-2. `python scripts/build.py` で `dist/` と `data/additions.tsv` を作り直す。
-3. `python scripts/build_site.py` でサイトを作り、必要なら手元で確認する：`python -m http.server 8788 --directory public` → <http://localhost:8788>
-4. コミットして push する。1分ほどでサイトに反映されます。
+ブラウザアプリの「候補DBに保存する」は追加予定の保存です。この操作では `data/master.tsv`、配布ファイル、`public/`、公開サイトは更新されません。追加予定の確認と辞書への引き継ぎは [追加候補の保存と辞書への反映](CANDIDATES.md) を参照してください。
+
+1. 作業用ブランチで、候補DBに保存した追加予定の名前・読み・出典と別の変換を確認し、各「読み・名前」を辞書と照合します。
+2. 未登録の組み合わせを `data/master.tsv` に追加する。`origin` は `added`、`added_on` に辞書への追加日、`source_url` に確認元URL、必要なら `note` に注記を書く。辞書データの編集元はこのファイルです。候補DBの保存日と辞書の追加日は別です。
+3. `python scripts/build.py` で `dist/` と `data/additions.tsv` を作り直す。
+4. `python scripts/build_site.py` でサイトを作り、配布4形式・検索データ・ZIPの一致を確認する。必要なら手元で確認する：`python -m http.server 8788 --directory public` → <http://localhost:8788>
+5. READMEの追加内容・収録数を更新し、辞書関係の変更を作業ブランチにコミットする。候補DBや作業記録はGit管理から除外されます。
+6. 公開する場合は本番ブランチへ反映・pushし、Cloudflareのビルドと公開結果を確認する。作業ブランチへのコミットやローカルビルドだけでは本番の公開サイトは更新されません。
+
+各IMEへのインポートも別操作です。サイトの公開結果やプロジェクトの収録数は、利用者のIMEに取り込まれた語数を示すものではありません。
 
 語の削除を更新履歴に載せる仕組みは、まだありません。削除や改名の方針を決めるときに用意します。
 

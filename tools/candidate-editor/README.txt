@@ -1,14 +1,19 @@
-追加候補をExcelで編集する
+追加候補の編集と保存
 
 一つの画面で日々の作業を行う場合は、プロジェクト直下の「辞書追加アプリ.cmd」を開いてください。
 候補の確認・名前や読みの編集・判断の自動保存・候補DBへの保存をブラウザの一画面で操作できます。
 ブラウザアプリは候補DBだけを更新します。辞書への追加はCodexへ別途依頼してください。
 「アプリの使い方.txt」に操作とExcelからの引き継ぎを記載しています。
+全体の流れ・保存先・辞書追加の手順は、プロジェクト直下の docs/CANDIDATES.md を参照してください。
+「追加する」と入力の自動保存は作業記録への保存です。「候補DBに保存する」を済ませてから、
+「候補DBに保存した追加予定を確認して、作業用ブランチで辞書に追加して」とCodexへ依頼します。
+辞書への追加、Web公開、各IMEへのインポートはそれぞれ別の操作です。
 
-Excelとコマンドで辞書へ直接反映する従来の操作は「毎日の使い方.txt」を参照してください。
-01_今日の候補を開く.cmd → 02_辞書への追加内容を確認.cmd → 03_採用した語を辞書へ反映.cmd
-の順で、日次一覧から辞書本体・配布ファイル・ローカルサイトまで反映できます。
-以下は候補の名前・読み・根拠などを編集する元の台帳の操作です。
+元の候補台帳をExcelで編集する
+
+以下は候補の名前・読み・根拠・確認状態などを編集し、候補DBへ保存する操作です。
+台帳と01・02・03のコマンドは outputs/01a11e9f-3575-7fc3-8eb3-55ed85c0a3c9 にあります。
+この手順の03_DBへ反映.cmdは候補DBへの保存で、辞書本体への追加ではありません。
 
 1. 追加候補_作業台帳.xlsx を開き、薄い黄色の欄を編集します。
    収録判断は名前・チャンネルの隣で「未判断・採用・保留・不採用」から選べます。
@@ -41,19 +46,33 @@ YouTube IDを入力・変更するとリンクが更新されます。空欄や�
 Excelが並べ替えを制限する場合は校閲からシート保護を解除できます（パスワードなし）。
 保護を解除しても識別IDや参照欄の変更・削除は取り込み時に拒否します。
 
-DB保存先: outputs/vtuberpost_private
-編集用状態: candidate_editor_state.json（収録判断・メモ・理由）
+候補DB保存先: outputs/vtuberpost_private
+編集用状態: candidate_editor_state.json（収録判断・メモ・理由・extra_conversions）
 編集履歴: candidate_editor_history.json（変更前後）
 手動確認根拠: candidate_manual_overrides.json（既存の再結合処理で読みを保護）
-バックアップ: editor_backups/<日時_計画ID>/
-  manifest.jsonのstatus=appliedは反映済み、rolled_backは自動復元済みです。
+元台帳のバックアップ: outputs/vtuberpost_private/editor_backups/<日時_計画ID>/
+  manifest.jsonのstatus=appliedは候補DBへ保存済み、rolled_backは自動復元済みです。
   各元ファイルとafter_ファイル、反映計画を保存します。
-  調査処理と台帳反映は同時に実行しないでください。
+  調査処理・台帳反映・アプリ保存・辞書追加は同時に実行しないでください。
   処理が強制終了した場合はmanifestとバックアップを確認して復元してください。
+
+アプリの作業記録: outputs/daily-dictionary/batches/<一覧ID>/app_review.json
+アプリの保存計画: 同じ一覧の候補DB保存計画.json（target=candidate_db）
+アプリの完了記録: 同じ一覧の完了.json（target=candidate_db、added_words=0）
+アプリのバックアップ: 同じ一覧のbackups/<ID>/
+outputsはGit管理から除外されています。候補DBと未保存の編集はGitのコミットだけでは残りません。
+
+従来の日次Excelで辞書へ直接反映する
+
+「毎日の使い方.txt」は、01_今日の候補を開く.cmd → 02_辞書への追加内容を確認.cmd →
+03_採用した語を辞書へ反映.cmdで、辞書本体・配布ファイル・ローカルサイトを更新する手順です。
+ブラウザアプリの追加予定を保存する手順とは異なります。
+アプリへ引き継いだ作業一覧では日次Excelコマンドは止まります。記録を削除して切り替えないでください。
 
 Codexへの依頼例:
 「編集した台帳の差分を確認して」
 「確認した変更をDBへ反映して」
+「候補DBに保存した追加予定を確認して、作業用ブランチで辞書に追加して」
 
 開発者用:
   editor.py prepare                       DBから入力JSONを作成
@@ -63,6 +82,8 @@ Codexへの依頼例:
   editor.py preview <xlsx>               差分確認（DBの書き換えなし）
   editor.py apply <反映計画.json>          確認した計画のみ反映
   editor.py --db <path> --out <path> ...  テスト用の別DB・出力先を指定
+  アプリ: Workspace.preview/apply → daily.preview_candidates/save_candidates（候補DB専用）
+  daily.py preview/apply は従来の日次Excelの辞書反映。アプリの保存計画には使いません。
 
 candidate_import_hold.tsv / candidate_import_details.json / candidate_import_history.json は
 元資料の取り込み時点の記録です。台帳の編集で原文を上書きしません。
