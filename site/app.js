@@ -25,8 +25,15 @@ function renderPagination(r){
     (r.total<=20?$('result-heading'):(active===nextPage?prevPage:nextPage)).focus();
   }
 }
-function rowLabel(r){return r?r.word+'（'+r.reading+' / '+[r.google_pos,r.microsoft_pos,r.atok_pos].join('・')+' / '+r.origin+'）':'なし'}
-function metadataLabel(m){return '理由：'+(m.reason||'不明')+'\n確認日：'+(m.checked_on||'不明')+'\n根拠：'+(m.evidence.urls.join('、')||m.evidence.text||'不明')+(m.evidence.text&&m.evidence.urls.length?'\n'+m.evidence.text:'')}
+function youtubeChannelUrl(value){
+  if(typeof value!=='string')return null;
+  try{
+    const u=new URL(value);
+    if(!['https:','http:'].includes(u.protocol)||!['youtube.com','www.youtube.com','m.youtube.com'].includes(u.hostname)||u.username||u.password||u.port)return null;
+    const channel=u.pathname.match(/^\/(?:channel\/[^/]+|c\/[^/]+|user\/[^/]+|@[^/]+)(?=\/|$)/);
+    return channel?'https://www.youtube.com'+channel[0]:null;
+  }catch{return null}
+}
 const historyGroups=[['added','追加した名前'],['corrected','変更した名前'],['removed','削除した名前'],['undone','変更を取り消した名前'],['annotations','記録を更新した名前']];
 function historyNames(items,group,records,legacy){
   const names=new Map();
@@ -36,10 +43,12 @@ function historyNames(items,group,records,legacy){
     if(!row&&group!=='annotations')throw Error('History row missing');
     if(row&&(typeof row.word!=='string'||typeof row.reading!=='string'))throw Error('History row invalid');
     const key=row?.word||'\0'+item.id;
-    if(!names.has(key))names.set(key,{word:row?.word,readings:new Set(),previousNames:new Set()});
+    if(!names.has(key))names.set(key,{word:row?.word,readings:new Set(),previousNames:new Set(),youtube:null});
     const name=names.get(key);
     if(row)name.readings.add(row.reading);
     if(!legacy&&change?.before&&change.before.word!==row.word)name.previousNames.add(change.before.word);
+    const urls=[row?.source_url,...(change?.evidence?.urls||[]),change?.before?.source_url];
+    for(const url of urls)name.youtube||=youtubeChannelUrl(url);
   }
   const sorted=[...names.values()];
   for(const name of sorted)name.readings=[...name.readings].sort((a,b)=>b.length-a.length||a.localeCompare(b,'ja'));
@@ -48,9 +57,13 @@ function historyNames(items,group,records,legacy){
 function historyNameList(names){
   const list=el('ul',undefined,'change-name-list');
   for(const name of names){
-    const item=el('li');item.append(el('strong',name.word||'名前は更新の詳細を参照','change-name'));
+    const item=el('li');item.append(el('strong',name.word||'名前不明','change-name'));
     if(name.previousNames.size)item.append(el('span','変更前：'+[...name.previousNames].join(' / '),'change-previous-name'));
     if(name.readings.length)item.append(el('span',name.readings.join(' / '),'change-readings'));
+    if(name.youtube){
+      const link=el('a','YouTube ↗','change-youtube');link.href=name.youtube;link.target='_blank';link.rel='noopener';
+      link.setAttribute('aria-label',name.word+'のYouTubeチャンネルを開く');item.append(link);
+    }
     list.append(item);
   }
   return list;
@@ -88,45 +101,12 @@ function prepareManifestView(m){
     if(!ledgerFormat && !('scope' in c)){
       if(!Array.isArray(c.added)||!Array.isArray(c.removed))throw Error('Legacy history invalid');
       appendHistoryNames(body,c,records,true);
-      const details=el('details',undefined,'change-details');details.append(el('summary','更新の詳細'));
-      details.append(el('strong',c.title||'辞書を更新'));
-      details.append(el('p','旧形式の履歴：適用日・公開確認情報は含まれていません。'));
-      details.append(el('p','追加 '+c.added.length+'件 / 削除 '+c.removed.length+'件'));
-      for(const [label,rows]of [['追加',c.added],['削除',c.removed]])for(const row of rows){
-        if(typeof row.word!=='string'||typeof row.reading!=='string')throw Error('Legacy row invalid');
-        details.append(el('p',label+'：'+row.word+'（'+row.reading+'）'));
-      }
-      body.append(details);box.append(body);historyNodes.push(box);continue;
+      box.append(body);historyNodes.push(box);continue;
     }
     if(!['reconstructed','applied'].includes(c.scope)||
        !['added','corrected','removed','undone','annotations'].every(group=>Array.isArray(c[group])))throw Error('Ledger history invalid');
-    body.append(el('p',c.scope==='reconstructed'?'過去の収録記録':(c.publishedIn||[]).length?'公開確認済み':'辞書に反映済み','change-status'));
     appendHistoryNames(body,c,records);
-    const d=el('details',undefined,'change-details');d.append(el('summary','更新の詳細・出典'));
-    d.append(el('strong',c.title||'辞書を更新'));
-    d.append(el('p',c.scope==='reconstructed'?'導入前の復元記録：適用日 '+(c.appliedOn||'不明')+'（確認日は各記録を参照）':'適用済み：'+c.appliedOn));
-    d.append(el('p',(c.publishedIn||[]).length?'公開確認版：'+c.publishedIn.join('、'):'公開確認記録なし'));
-    d.append(el('p','追加 '+c.added.length+'件 / 訂正 '+c.corrected.length+'件 / 削除 '+c.removed.length+'件 / 取消し '+c.undone.length+'件 / 記録訂正 '+c.annotations.length+'件'));
-    for(const [label,items]of [['追加',c.added],['訂正',c.corrected],['削除',c.removed],['取消し',c.undone],['記録訂正',c.annotations]])for(const item of items){
-      const details=el('div',undefined,'change-item');
-      details.append(el('p',label+'：'+item.id));
-      if(label==='記録訂正'){
-        details.append(el('p','対象：'+item.related_ids.join('、')));
-        details.append(el('p','変更前：'+metadataLabel(item.metadata_before)),el('p','変更後：'+metadataLabel(item.metadata_after)));
-      }else {
-        details.append(el('p',rowLabel(item.before)+' → '+rowLabel(item.after)));
-        for(const [key,name]of [['source_url','行の出典URL'],['note','行の注記']]){
-          const before=item.before?.[key]||'',after=item.after?.[key]||'';
-          if(before!==after)details.append(el('p',name+'：変更前 '+(before||'なし')+' → 変更後 '+(after||'なし')));
-        }
-      }
-      details.append(el('p','理由：'+(item.reason||'不明')+' / 確認日：'+(item.checked_on||'不明')));
-      if(item.evidence.text)details.append(el('p',item.evidence.text));
-      for(const url of item.evidence.urls){try{const link=el('a',url);link.href=safeUrl(url);link.rel='noopener';details.append(link,el('br'))}catch{details.append(el('p',url+'（リンク形式を確認してください）'))}}
-      if(item.related_ids.length&&label!=='記録訂正')details.append(el('p','関連ID：'+item.related_ids.join('、')));
-      d.append(details);
-    }
-    body.append(d);box.append(body);historyNodes.push(box);
+    box.append(body);historyNodes.push(box);
   }
   return {entryCount:m.count.toLocaleString()+'語',downloadUrl,downloadName:'F-VTD-'+m.version+'.zip',
     downloadText:config.demo?'↓ 確認用ZIPをダウンロード':'↓ すべての辞書をダウンロード',versionText,historyNodes};

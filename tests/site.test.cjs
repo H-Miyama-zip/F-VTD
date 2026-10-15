@@ -77,7 +77,8 @@ test('a malformed historical evidence link does not disable dictionary search', 
   const screen=await app(initial);
   assert.equal(vm.runInContext('ready',screen.context),true);
   assert.equal(screen.get('search-button').disabled,false);
-  assert.match(textContent(screen.get('changelog')),/リンク形式を確認してください/);
+  assert.match(textContent(screen.get('changelog')),/架空甲/);
+  assert.equal(descendants(screen.get('changelog'),n=>n.tagName==='a').length,0);
 });
 
 test('publication-only updates refresh the current screen without a new search worker', async()=>{
@@ -92,7 +93,8 @@ test('publication-only updates refresh the current screen without a new search w
   screen.manifest(confirmed);
   await screen.check();
   assert.match(screen.get('version').textContent,/公開確認済み/);
-  assert.match(textContent(screen.get('changelog')),/公開確認版：fixture-version/);
+  assert.match(textContent(screen.get('changelog')),/架空甲/);
+  assert.doesNotMatch(textContent(screen.get('changelog')),/公開確認版|fixture-version/);
   assert.equal(screen.workers(),1);
   assert.equal(screen.get('search-button').disabled,false);
   assert.equal(vm.runInContext('manifest.publicationStatus',screen.context),'confirmed');
@@ -145,15 +147,17 @@ test('unchanged main client can switch to the generated ledger manifest', async(
   assert.equal(screen.workers(),2);
 });
 
-for(const field of ['source_url','note'])test(`${field}-only corrections expose values as text independently of event evidence`,async()=>{
+for(const field of ['source_url','note'])test(`${field}-only corrections keep internal values out of the public history`,async()=>{
   const initial=fixture(),change=initial.changes[0].removed.pop();
-  const before={word:'架空甲',reading:'かこうこう',google_pos:'人名',microsoft_pos:'人名',atok_pos:'人名',origin:'upstream',source_url:'https://example.test/old',note:'旧注記'};
+  const before={word:'架空甲',reading:'かこうこう',google_pos:'人名',microsoft_pos:'人名',atok_pos:'人名',origin:'upstream',source_url:'https://www.youtube.com/channel/UCfixture/about',note:'旧注記'};
   const value=field==='note'?'<img src=x onerror=alert(1)>':'https://example.test/'+ 'long'.repeat(100);
   initial.changes[0].corrected=[{...change,before,after:{...before,[field]:value}}];
   const screen=await app(initial),content=textContent(screen.get('changelog'));
-  assert.match(content,field==='note'?/行の注記：変更前 旧注記/:/行の出典URL：変更前 https:\/\/example.test\/old/);
-  assert.ok(content.includes('変更後 '+value));
-  assert.match(content,/架空の確認理由/);
+  assert.match(content,/変更した名前（1件）/);assert.match(content,/架空甲/);
+  assert.ok(!content.includes(value));
+  assert.doesNotMatch(content,/旧注記|行の注記|行の出典URL|架空の確認理由|fixture-change|example\.test/);
+  const links=descendants(screen.get('changelog'),n=>n.tagName==='a');
+  assert.equal(links.length,1);assert.equal(links[0].href,'https://www.youtube.com/channel/UCfixture');
   const tags=[];function walk(n){if(typeof n==='object'){tags.push(n.tagName);n.children.forEach(walk)}}
   walk(screen.get('changelog'));assert.ok(!tags.includes('img'));
 });
@@ -181,7 +185,7 @@ test('ledgerChanges publication refresh keeps the worker and protects row metada
   confirmed.ledgerChanges[0].publishedIn=[initial.version];
   confirmed.ledgerChanges[0].removed[0].publishedIn=[initial.version];
   screen.manifest(confirmed);await screen.check();assert.equal(screen.workers(),1);
-  assert.match(textContent(screen.get('changelog')),/公開確認版/);
+  assert.match(screen.get('version').textContent,/公開確認済み/);
   const forged=clone(confirmed);forged.ledgerChanges[0].removed[0].before.note='forged row note';
   screen.manifest(forged);await screen.check();
   assert.equal(vm.runInContext('manifest.ledgerChanges[0].removed[0].before.note',screen.context),undefined);
@@ -199,13 +203,13 @@ test('new client loads the main legacy history without invented ledger metadata'
   const initial=legacyFixture(),screen=await app(initial),history=textContent(screen.get('changelog'));
   assert.equal(vm.runInContext('ready',screen.context),true);
   assert.equal(screen.get('search-button').disabled,false);
-  assert.match(history,/追加：架空旧追加（かこうきゅうついか）/);
-  assert.match(history,/削除：架空旧削除（かこうきゅうさくじょ）/);
+  assert.match(history,/追加した名前（1件）.*架空旧追加.*かこうきゅうついか/);
+  assert.match(history,/削除した名前（1件）.*架空旧削除.*かこうきゅうさくじょ/);
   assert.doesNotMatch(history,/undefined|適用済み|公開確認済み/);
   assert.doesNotMatch(screen.get('version').textContent,/公開確認済み/);
 });
 
-test('history shows each name and its readings before technical update details',async()=>{
+test('public history contains names and readings without internal update details',async()=>{
   const initial=fixture(),update=initial.changes[0],event=update.removed.pop();
   update.title='候補DBの作業記録';
   update.added=['こう','かこうこう'].map((reading,i)=>({...clone(event),id:'added-'+i,before:null,after:{...event.before,reading}}));
@@ -214,9 +218,45 @@ test('history shows each name and its readings before technical update details',
   assert.equal(visible.match(/架空甲/g).length,1);
   assert.match(visible,/かこうこう \/ こう/);
   assert.doesNotMatch(visible,/候補DB|added-0|架空の確認理由|example\.test/);
-  assert.match(textContent(history),/候補DBの作業記録/);
-  assert.match(textContent(history),/added-0/);
+  assert.doesNotMatch(textContent(history),/候補DB|added-0|架空の確認理由|確認日|出典|更新の詳細|人名|upstream|example\.test/);
   assert.equal(vm.runInContext('manifest.changes[0].added.length',screen.context),2);
+  assert.equal(vm.runInContext('manifest.changes[0].added[0].reason',screen.context),'架空の確認理由');
+});
+
+test('each name has one channel link even when it has several readings and evidence URLs',async()=>{
+  const initial=fixture(),update=initial.changes[0],event=update.removed.pop();
+  update.added=['こう','かこうこう'].map((reading,i)=>({...clone(event),id:'added-'+i,before:null,
+    after:{...event.before,reading,source_url:'https://lit.link/fiction'},
+    evidence:{text:'内部の確認記録',urls:['https://lit.link/fiction','https://m.youtube.com/channel/UCfixture/about?hl=ja']}}));
+  const screen=await app(initial),history=screen.get('changelog');
+  const links=descendants(history,n=>n.tagName==='a');
+  assert.equal(links.length,1);assert.equal(links[0].textContent,'YouTube ↗');
+  assert.equal(links[0].href,'https://www.youtube.com/channel/UCfixture');
+  assert.equal(links[0].target,'_blank');assert.equal(links[0].rel,'noopener');
+  assert.doesNotMatch(textContent(history),/内部の確認記録|lit\.link|確認日|理由/);
+});
+
+test('channel links use recorded YouTube channels and omit unrelated or invalid URLs',async()=>{
+  const urls=['javascript:alert(1)','https://','https://youtube.com.evil.test/channel/UCfake',
+    'https://www.youtube.com@evil.test/channel/UCfake','https://user@www.youtube.com/channel/UCfake',
+    'https://www.youtube.com:8443/channel/UCfake','https://www.youtube.com/watch?v=video',
+    'https://youtu.be/video','https://example.test/channel/UCfake',null];
+  for(const url of urls){
+    const initial=fixture(),event=initial.changes[0].removed[0];
+    event.before.source_url=url;event.evidence.urls=[url];
+    const screen=await app(initial);
+    assert.equal(vm.runInContext('ready',screen.context),true);
+    assert.equal(descendants(screen.get('changelog'),n=>n.tagName==='a').length,0,String(url));
+  }
+});
+
+test('legacy rows can link to recorded handle, custom and user channels',async()=>{
+  for(const channel of ['@fiction','c/FictionChannel','user/FictionUser']){
+    const initial=legacyFixture();
+    initial.changes[0].added[0].source_url='https://youtube.com/'+channel+'/about?hl=ja';
+    const screen=await app(initial),links=descendants(screen.get('changelog'),n=>n.tagName==='a');
+    assert.equal(links.length,1);assert.equal(links[0].href,'https://www.youtube.com/'+channel);
+  }
 });
 
 test('large updates keep remaining names available in a disclosure',async()=>{
@@ -250,6 +290,7 @@ test('name corrections show both names without requiring record details',async()
 
 test('annotations resolve their name from records outside the five displayed updates',async()=>{
   const initial=fixture(),original=clone(initial.changes[0]),event=original.removed[0];
+  event.before.source_url='https://www.youtube.com/@fiction/about';
   const metadata={reason:event.reason,checked_on:event.checked_on,evidence:event.evidence};
   const annotation={...clone(event),id:'annotation',before:null,after:null,related_ids:[event.id],
     metadata_before:metadata,metadata_after:{...metadata,reason:'確認内容の補足'}};
@@ -258,7 +299,8 @@ test('annotations resolve their name from records outside the five displayed upd
   initial.changes=[newest,...Array.from({length:4},()=>clone(empty)),original];
   const screen=await app(initial),visible=visibleText(screen.get('changelog').children[0]);
   assert.match(visible,/記録を更新した名前（1件）/);assert.match(visible,/架空甲/);
-  assert.doesNotMatch(visible,/fixture-change|確認内容の補足/);
+  assert.doesNotMatch(textContent(screen.get('changelog')),/fixture-change|確認内容の補足/);
+  assert.equal(descendants(screen.get('changelog').children[0],n=>n.tagName==='a')[0].href,'https://www.youtube.com/@fiction');
 });
 
 test('legacy additions also group multiple readings under one visible name',async()=>{
@@ -274,12 +316,13 @@ test('open new client can switch to main legacy data and then back to ledger dat
   const initial=fixture(),screen=await app(initial),legacy=legacyFixture();
   screen.manifest(legacy);await screen.check();await screen.get('apply-update').onclick();
   assert.equal(vm.runInContext('manifest.version',screen.context),legacy.version);
-  assert.match(textContent(screen.get('changelog')),/追加：架空旧追加/);
+  assert.match(textContent(screen.get('changelog')),/追加した名前（1件）.*架空旧追加/);
   assert.equal(screen.get('update-banner').hidden,true);
   assert.equal(screen.workerObjects[0].terminated,true);
   screen.manifest(initial);await screen.check();await screen.get('apply-update').onclick();
   assert.equal(vm.runInContext('manifest.version',screen.context),initial.version);
-  assert.match(textContent(screen.get('changelog')),/架空の確認理由/);
+  assert.match(textContent(screen.get('changelog')),/削除した名前（1件）.*架空甲/);
+  assert.doesNotMatch(textContent(screen.get('changelog')),/架空の確認理由/);
   assert.equal(screen.get('update-banner').hidden,true);
   assert.equal(screen.workerObjects[1].terminated,true);
   assert.equal(screen.workers(),3);
@@ -294,7 +337,7 @@ for(const failure of ['history','data','worker'])test(`${failure} update failure
   const oldWorker=screen.workerObjects[0],oldVersion=screen.get('version').textContent,
     oldDownload=screen.get('download').href,oldHistory=screen.get('changelog').children[0],
     oldResult=screen.get('candidates').children[0];
-  if(failure==='history')candidate.changes[0].removed[0].evidence=null;
+  if(failure==='history')candidate.changes[0].removed[0].before.reading=null;
   if(failure==='data')screen.failData(true);
   if(failure==='worker')screen.failWorker(true);
   screen.manifest(candidate);await screen.check();await screen.get('apply-update').onclick();
@@ -314,7 +357,7 @@ for(const failure of ['history','data','worker'])test(`${failure} update failure
   vm.runInContext("search('継続する架空検索',2,false)",screen.context);
   assert.equal(oldWorker.messages.at(-1).q,'継続する架空検索');
   screen.failData(false);screen.failWorker(false);
-  candidate.changes[0].removed[0].evidence=clone(initial.changes[0].removed[0].evidence);
+  candidate.changes[0].removed[0].before.reading=initial.changes[0].removed[0].before.reading;
   screen.manifest(candidate);await screen.check();await screen.get('apply-update').onclick();
   assert.equal(vm.runInContext('manifest.version',screen.context),candidate.version);
   assert.equal(oldWorker.terminated,true);

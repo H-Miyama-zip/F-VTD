@@ -29,11 +29,8 @@ header{flex-wrap:wrap}header nav{margin-left:auto}
 .footer-x svg{width:14px;height:14px}
 footer .footer-x+span{margin-left:0}
 @media(max-width:700px){.x-link{display:flex;max-width:400px}}
-.change-item{padding:0.5rem 0;border-top:1px solid #eee}.change-item p{white-space:pre-wrap;overflow-wrap:anywhere}.change-item a{overflow-wrap:anywhere}
-
-/* Lead with names; keep the complete update record available on demand. */
+/* Public history shows names, readings and channel links. */
 .change{padding:24px 0;align-items:start}.change-body{min-width:0}
-.change .change-status{color:#666;font-size:12px;margin:0 0 10px}
 .change-name-group+.change-name-group{margin-top:20px}
 .change-name-group h3{font-size:14px;font-weight:600;color:#555;margin:0 0 10px}
 .change-name-list{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
@@ -41,10 +38,9 @@ footer .footer-x+span{margin-left:0}
 .change .change-name{display:block;font-size:17px;line-height:1.5;color:inherit}
 .change-readings,.change-previous-name{display:block;font-size:13px;color:#666;margin-top:4px;line-height:1.6}
 .change-previous-name{font-size:12px}
+.change-youtube{display:inline-block;color:#9b2029;font-size:13px;margin-top:8px;text-decoration:underline;text-underline-offset:3px}
 .change .change-more{padding-top:10px}.change-more summary{font-size:14px;color:var(--accent)}
 .change-more[open] .change-name-list{margin-top:10px}
-.change .change-details{margin-top:16px;padding-top:12px;border-top:1px solid #eee;color:#555}
-.change-details>summary{font-size:13px}.change-details[open]>summary{margin-bottom:12px}
 .change details summary{cursor:pointer;overflow-wrap:anywhere}
 .change details summary:focus-visible{outline:3px solid #185ca8;outline-offset:3px}
 @media(max-width:900px){.change-name-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
