@@ -27,6 +27,48 @@ function renderPagination(r){
 }
 function rowLabel(r){return r?r.word+'（'+r.reading+' / '+[r.google_pos,r.microsoft_pos,r.atok_pos].join('・')+' / '+r.origin+'）':'なし'}
 function metadataLabel(m){return '理由：'+(m.reason||'不明')+'\n確認日：'+(m.checked_on||'不明')+'\n根拠：'+(m.evidence.urls.join('、')||m.evidence.text||'不明')+(m.evidence.text&&m.evidence.urls.length?'\n'+m.evidence.text:'')}
+const historyGroups=[['added','追加した名前'],['corrected','変更した名前'],['removed','削除した名前'],['undone','変更を取り消した名前'],['annotations','記録を更新した名前']];
+function historyNames(items,group,records,legacy){
+  const names=new Map();
+  for(const item of items){
+    const change=group==='annotations'?records.get(item.related_ids[0]):item;
+    const row=legacy?item:change?.after||change?.before;
+    if(!row&&group!=='annotations')throw Error('History row missing');
+    if(row&&(typeof row.word!=='string'||typeof row.reading!=='string'))throw Error('History row invalid');
+    const key=row?.word||'\0'+item.id;
+    if(!names.has(key))names.set(key,{word:row?.word,readings:new Set(),previousNames:new Set()});
+    const name=names.get(key);
+    if(row)name.readings.add(row.reading);
+    if(!legacy&&change?.before&&change.before.word!==row.word)name.previousNames.add(change.before.word);
+  }
+  const sorted=[...names.values()];
+  for(const name of sorted)name.readings=[...name.readings].sort((a,b)=>b.length-a.length||a.localeCompare(b,'ja'));
+  return sorted.sort((a,b)=>(a.readings[0]||a.word||'').localeCompare(b.readings[0]||b.word||'','ja')||(a.word||'').localeCompare(b.word||'','ja'));
+}
+function historyNameList(names){
+  const list=el('ul',undefined,'change-name-list');
+  for(const name of names){
+    const item=el('li');item.append(el('strong',name.word||'名前は更新の詳細を参照','change-name'));
+    if(name.previousNames.size)item.append(el('span','変更前：'+[...name.previousNames].join(' / '),'change-previous-name'));
+    if(name.readings.length)item.append(el('span',name.readings.join(' / '),'change-readings'));
+    list.append(item);
+  }
+  return list;
+}
+function appendHistoryNames(body,change,records,legacy=false){
+  for(const[group,label]of historyGroups){
+    const items=change[group]||[];
+    if(!items.length)continue;
+    const names=historyNames(items,group,records,legacy),section=el('section',undefined,'change-name-group');
+    section.append(el('h3',label+'（'+names.length+'件）'),historyNameList(names.slice(0,12)));
+    if(names.length>12){
+      const more=el('details',undefined,'change-more');
+      more.append(el('summary','残り'+(names.length-12)+'件の名前を見る'),historyNameList(names.slice(12)));
+      section.append(more);
+    }
+    body.append(section);
+  }
+}
 // Build every history node before replacing the validated view.
 function prepareManifestView(m){
   if(!m||typeof m.version!=='string'||typeof m.data!=='string'||typeof m.zip!=='string'||
@@ -34,19 +76,22 @@ function prepareManifestView(m){
   const downloadUrl=safeUrl(m.zip,config.manifestUrl),ledgerFormat=m.ledgerChanges!==undefined;
   const changes=ledgerFormat?m.ledgerChanges:m.changes,historyNodes=[];
   if(!Array.isArray(changes))throw Error('History invalid');
+  const records=new Map();
+  for(const change of changes)for(const[group]of historyGroups)for(const item of change[group]||[])if(item.id)records.set(item.id,item);
   const dateLabel={legacy_added_on:'旧記録の追加日',applied_on:'適用日',upstream_date:'原版の日付'}[m.dateMeaning]||'日付';
   const publication=m.publicationStatus===undefined?'旧形式（公開確認情報なし）':
     m.publicationStatus==='confirmed'?'公開確認済み（'+m.publishedAt+'）':'公開確認記録なし';
   const versionText=m.version+' · '+m.count.toLocaleString()+'語 · '+dateLabel+' '+m.updatedAt.slice(0,10)+' · '+publication;
   for(const c of changes.slice(0,5)){
-    const box=el('article',undefined,'change'),body=el('div');
+    const box=el('article',undefined,'change'),body=el('div',undefined,'change-body');
     box.append(el('time',c.date||'日付不明'));
-    body.append(el('strong',c.title||'辞書を更新'));
     if(!ledgerFormat && !('scope' in c)){
       if(!Array.isArray(c.added)||!Array.isArray(c.removed))throw Error('Legacy history invalid');
-      body.append(el('p','旧形式の履歴：適用日・公開確認情報は含まれていません。'));
-      body.append(el('p','追加 '+c.added.length+'件 / 削除 '+c.removed.length+'件'));
-      const details=el('details');details.append(el('summary','変更された語を見る'));
+      appendHistoryNames(body,c,records,true);
+      const details=el('details',undefined,'change-details');details.append(el('summary','更新の詳細'));
+      details.append(el('strong',c.title||'辞書を更新'));
+      details.append(el('p','旧形式の履歴：適用日・公開確認情報は含まれていません。'));
+      details.append(el('p','追加 '+c.added.length+'件 / 削除 '+c.removed.length+'件'));
       for(const [label,rows]of [['追加',c.added],['削除',c.removed]])for(const row of rows){
         if(typeof row.word!=='string'||typeof row.reading!=='string')throw Error('Legacy row invalid');
         details.append(el('p',label+'：'+row.word+'（'+row.reading+'）'));
@@ -55,10 +100,13 @@ function prepareManifestView(m){
     }
     if(!['reconstructed','applied'].includes(c.scope)||
        !['added','corrected','removed','undone','annotations'].every(group=>Array.isArray(c[group])))throw Error('Ledger history invalid');
-    body.append(el('p',c.scope==='reconstructed'?'導入前の復元記録：適用日 '+(c.appliedOn||'不明')+'（確認日は各記録を参照）':'適用済み：'+c.appliedOn));
-    body.append(el('p',(c.publishedIn||[]).length?'公開確認版：'+c.publishedIn.join('、'):'公開確認記録なし'));
-    body.append(el('p','追加 '+c.added.length+'件 / 訂正 '+c.corrected.length+'件 / 削除 '+c.removed.length+'件 / 取消し '+c.undone.length+'件 / 記録訂正 '+c.annotations.length+'件'));
-    const d=el('details');d.append(el('summary','変更された語・根拠を見る'));
+    body.append(el('p',c.scope==='reconstructed'?'過去の収録記録':(c.publishedIn||[]).length?'公開確認済み':'辞書に反映済み','change-status'));
+    appendHistoryNames(body,c,records);
+    const d=el('details',undefined,'change-details');d.append(el('summary','更新の詳細・出典'));
+    d.append(el('strong',c.title||'辞書を更新'));
+    d.append(el('p',c.scope==='reconstructed'?'導入前の復元記録：適用日 '+(c.appliedOn||'不明')+'（確認日は各記録を参照）':'適用済み：'+c.appliedOn));
+    d.append(el('p',(c.publishedIn||[]).length?'公開確認版：'+c.publishedIn.join('、'):'公開確認記録なし'));
+    d.append(el('p','追加 '+c.added.length+'件 / 訂正 '+c.corrected.length+'件 / 削除 '+c.removed.length+'件 / 取消し '+c.undone.length+'件 / 記録訂正 '+c.annotations.length+'件'));
     for(const [label,items]of [['追加',c.added],['訂正',c.corrected],['削除',c.removed],['取消し',c.undone],['記録訂正',c.annotations]])for(const item of items){
       const details=el('div',undefined,'change-item');
       details.append(el('p',label+'：'+item.id));

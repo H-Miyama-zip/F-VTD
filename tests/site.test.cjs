@@ -32,6 +32,16 @@ class Element {
 function textContent(node) {
   return typeof node === 'string' ? node : node.textContent + node.children.map(textContent).join(' ');
 }
+function visibleText(node) {
+  if(typeof node==='string')return node;
+  if(node.hidden)return '';
+  const children=node.tagName==='details'&&!node.open?node.children.filter(n=>n.tagName==='summary'):node.children;
+  return node.textContent+children.map(visibleText).join(' ');
+}
+function descendants(node,predicate) {
+  if(typeof node!=='object')return [];
+  return [...(predicate(node)?[node]:[]),...node.children.flatMap(child=>descendants(child,predicate))];
+}
 
 async function app(initial, appSource=source) {
   const nodes = new Map();
@@ -193,6 +203,71 @@ test('new client loads the main legacy history without invented ledger metadata'
   assert.match(history,/削除：架空旧削除（かこうきゅうさくじょ）/);
   assert.doesNotMatch(history,/undefined|適用済み|公開確認済み/);
   assert.doesNotMatch(screen.get('version').textContent,/公開確認済み/);
+});
+
+test('history shows each name and its readings before technical update details',async()=>{
+  const initial=fixture(),update=initial.changes[0],event=update.removed.pop();
+  update.title='候補DBの作業記録';
+  update.added=['こう','かこうこう'].map((reading,i)=>({...clone(event),id:'added-'+i,before:null,after:{...event.before,reading}}));
+  const screen=await app(initial),history=screen.get('changelog'),visible=visibleText(history);
+  assert.match(visible,/追加した名前（1件）/);
+  assert.equal(visible.match(/架空甲/g).length,1);
+  assert.match(visible,/かこうこう \/ こう/);
+  assert.doesNotMatch(visible,/候補DB|added-0|架空の確認理由|example\.test/);
+  assert.match(textContent(history),/候補DBの作業記録/);
+  assert.match(textContent(history),/added-0/);
+  assert.equal(vm.runInContext('manifest.changes[0].added.length',screen.context),2);
+});
+
+test('large updates keep remaining names available in a disclosure',async()=>{
+  const initial=fixture(),update=initial.changes[0],event=update.removed.pop();
+  update.added=Array.from({length:14},(_,i)=>({...clone(event),id:'added-'+i,before:null,
+    after:{...event.before,word:'架空'+String(i).padStart(2,'0')}}));
+  const screen=await app(initial),history=screen.get('changelog');
+  assert.match(visibleText(history),/架空00/);
+  assert.match(visibleText(history),/架空11/);
+  assert.doesNotMatch(visibleText(history),/架空12|架空13/);
+  const more=descendants(history,n=>n.tagName==='details'&&n.children[0].textContent==='残り2件の名前を見る');
+  assert.equal(more.length,1);more[0].open=true;
+  assert.match(visibleText(history),/架空12/);assert.match(visibleText(history),/架空13/);
+});
+
+test('history names follow their readings rather than ledger event order',async()=>{
+  const initial=fixture(),update=initial.changes[0],event=update.removed.pop();
+  update.added=[['常葉紫苑','ときわしおん'],['碧羽そら','あおばそら']].map(([word,reading],i)=>({
+    ...clone(event),id:'added-'+i,before:null,after:{...event.before,word,reading}}));
+  const screen=await app(initial),visible=visibleText(screen.get('changelog'));
+  assert.ok(visible.indexOf('碧羽そら')<visible.indexOf('常葉紫苑'));
+});
+
+test('name corrections show both names without requiring record details',async()=>{
+  const initial=fixture(),update=initial.changes[0],event=update.removed.pop();
+  update.corrected=[{...event,after:{...event.before,word:'架空乙'}}];
+  const screen=await app(initial),visible=visibleText(screen.get('changelog'));
+  assert.match(visible,/変更した名前（1件）/);
+  assert.match(visible,/架空乙/);assert.match(visible,/変更前：架空甲/);
+});
+
+test('annotations resolve their name from records outside the five displayed updates',async()=>{
+  const initial=fixture(),original=clone(initial.changes[0]),event=original.removed[0];
+  const metadata={reason:event.reason,checked_on:event.checked_on,evidence:event.evidence};
+  const annotation={...clone(event),id:'annotation',before:null,after:null,related_ids:[event.id],
+    metadata_before:metadata,metadata_after:{...metadata,reason:'確認内容の補足'}};
+  const newest={...clone(original),id:'newest',removed:[],annotations:[annotation]};
+  const empty={...clone(original),removed:[]};
+  initial.changes=[newest,...Array.from({length:4},()=>clone(empty)),original];
+  const screen=await app(initial),visible=visibleText(screen.get('changelog').children[0]);
+  assert.match(visible,/記録を更新した名前（1件）/);assert.match(visible,/架空甲/);
+  assert.doesNotMatch(visible,/fixture-change|確認内容の補足/);
+});
+
+test('legacy additions also group multiple readings under one visible name',async()=>{
+  const initial=legacyFixture();
+  initial.changes[0].added.push({...initial.changes[0].added[0],reading:'きゅうついか'});
+  const screen=await app(initial),visible=visibleText(screen.get('changelog'));
+  assert.match(visible,/追加した名前（1件）/);
+  assert.equal(visible.match(/架空旧追加/g).length,1);
+  assert.match(visible,/かこうきゅうついか \/ きゅうついか/);
 });
 
 test('open new client can switch to main legacy data and then back to ledger data',async()=>{
